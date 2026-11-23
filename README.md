@@ -50,6 +50,13 @@ Windows PC と Android スマホのブラウザを **段階的な強度（Lv.1�
 
 ---
 
-## 次のステップ（Phase 2: Android アプリ）
+## 3. Android スマホ用アプリのインストール＆設定
 
-同じ Supabase RPC (`focus_guard_get` / `focus_guard_save` / `focus_guard_heartbeat`) を使う Kotlin 製 Android アプリを追加することで、スマホ側の Chrome 等のブラウザ起動も Lv.1〜Lv.3 でブロックできるようになります。
+GitHub Actions で自動ビルドされた APK が **GitHub Releases** に公開されます（Android Studio 不要）。
+
+1. スマホでリポジトリの **Releases（Latest）** を開き、`FocusGuard.apk` をダウンロードしてインストールします（初回のみ「不明なアプリのインストール」を許可）。
+2. FocusGuard アプリを開き、画面上部の案内に従って以下をオンにします：
+   - **ユーザー補助（Accessibility）**: 「FocusGuard ブラウザブロック」を ON
+   - **他のアプリの上に重ねて表示**: 許可を ON
+   - （推奨）**バッテリー制限なし**を ON
+3. 画面下の **Supabase 接続設定** に、PC アプリの「スマホ設定用ハッシュをコピー」でコピーした文字列を貼り付けて **「URL / ハッシュから一括取り込み」** を押せば同期完了です！

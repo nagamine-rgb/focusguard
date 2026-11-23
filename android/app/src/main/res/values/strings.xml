@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">FocusGuard</string>
+    <string name="accessibility_service_description">Chrome などのブラウザ起動を検知し、設定された強度（Lv.1〜Lv.3）でデジタルデトックスのブロックを行います。</string>
+</resources>

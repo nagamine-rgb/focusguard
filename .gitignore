@@ -9,6 +9,11 @@ state.json
 windows/FocusGuard.exe
 *.pdb
 *.log
+*.apk
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
 
 # OS / Editor
 .DS_Store
