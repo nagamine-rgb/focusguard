@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0e121a" />
+  <title>FocusGuard — ブラウザブロック リモコン</title>
+  <style>
+    :root {
+      --bg: #0d1119;
+      --card: #171e2b;
+      --card-border: #263147;
+      --text: #eef2f9;
+      --sub: #95a4bf;
+      --primary: #3b82f6;
+      --green: #22c55e;
+      --lv1: #f5b942;
+      --lv2: #f57642;
+      --lv3: #ef4455;
+      --radius: 14px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 16px 14px 48px;
+      background: radial-gradient(circle at top right, #17233a 0%, var(--bg) 55%);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Meiryo", sans-serif;
+      line-height: 1.5;
+    }
+    .wrap { max-width: 680px; margin: 0 auto; }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .brand { display: flex; align-items: center; gap: 10px; }
+    .dot {
+      width: 12px; height: 12px; border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 12px var(--green);
+    }
+    h1 { font-size: 1.25rem; margin: 0; letter-spacing: 0.02em; }
+    .mode-pill {
+      font-size: 0.75rem;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #1f2a3d;
+      color: #a9bee3;
+      border: 1px solid var(--card-border);
+      cursor: pointer;
+    }
+    .card {
+      background: rgba(23, 30, 43, 0.92);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 14px;
+    }
+    .card h2 {
+      font-size: 0.98rem;
+      margin: 0 0 12px;
+      color: #dce6f7;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .status-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .dev-box {
+      background: #111722;
+      border: 1px solid #222d42;
+      border-radius: 10px;
+      padding: 12px;
+    }
+    .dev-name { font-size: 0.78rem; color: var(--sub); margin-bottom: 4px; }
+    .dev-state { font-size: 1.05rem; font-weight: 700; }
+    .dev-sub { font-size: 0.76rem; color: var(--sub); margin-top: 4px; }
+
+    .level-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .lv-btn {
+      background: #111722;
+      border: 1.5px solid #28344b;
+      border-radius: 10px;
+      padding: 10px 8px;
+      color: var(--text);
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.15s ease;
+    }
+    .lv-btn strong { display: block; font-size: 0.92rem; }
+    .lv-btn span { display: block; font-size: 0.72rem; color: var(--sub); margin-top: 2px; }
+    .lv-btn.active[data-lv="1"] { border-color: var(--lv1); background: rgba(245, 185, 66, 0.14); }
+    .lv-btn.active[data-lv="2"] { border-color: var(--lv2); background: rgba(245, 118, 66, 0.14); }
+    .lv-btn.active[data-lv="3"] { border-color: var(--lv3); background: rgba(239, 68, 85, 0.16); }
+
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+    label.field { display: block; font-size: 0.78rem; color: var(--sub); margin-bottom: 4px; }
+    select, input[type="text"], input[type="time"], input[type="password"] {
+      width: 100%;
+      background: #101622;
+      color: var(--text);
+      border: 1px solid #2c3952;
+      border-radius: 9px;
+      padding: 10px 11px;
+      font-size: 0.92rem;
+    }
+    .btn-row { display: grid; grid-template-columns: 1.3fr 1fr; gap: 10px; }
+    button.btn {
+      border: none;
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 0.94rem;
+      font-weight: 700;
+      cursor: pointer;
+      color: #fff;
+    }
+    .btn-primary { background: var(--primary); }
+    .btn-danger { background: #364156; }
+    .btn-green { background: #1e9e5a; }
+    .btn-sm { padding: 7px 11px; font-size: 0.8rem; border-radius: 8px; }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .alert {
+      display: none;
+      padding: 10px 12px;
+      border-radius: 9px;
+      font-size: 0.84rem;
+      margin-bottom: 12px;
+    }
+    .alert.show { display: block; }
+    .alert.err { background: rgba(239, 68, 85, 0.18); border: 1px solid var(--lv3); color: #ffb4bc; }
+    .alert.ok { background: rgba(34, 197, 94, 0.16); border: 1px solid var(--green); color: #a7f3c5; }
+
+    .sched-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      background: #111722;
+      border: 1px solid #222d42;
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+    }
+    .sched-item.off { opacity: 0.55; }
+    .sched-title { font-weight: 700; font-size: 0.92rem; }
+    .sched-meta { font-size: 0.78rem; color: var(--sub); }
+    .days-wrap { display: flex; gap: 5px; flex-wrap: wrap; margin: 8px 0 12px; }
+    .day-chip {
+      padding: 6px 10px;
+      border-radius: 8px;
+      border: 1px solid #2c3952;
+      background: #101622;
+      color: var(--sub);
+      font-size: 0.82rem;
+      cursor: pointer;
+    }
+    .day-chip.on { background: #264980; border-color: var(--primary); color: #fff; font-weight: 700; }
+
+    details summary {
+      cursor: pointer;
+      font-weight: 700;
+      color: #c8d6ee;
+      list-style: none;
+    }
+    .muted { font-size: 0.78rem; color: var(--sub); }
+    @media (max-width: 520px) {
+      .level-grid { grid-template-columns: 1fr; }
+      .row, .btn-row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="brand">
+        <div id="statusDot" class="dot"></div>
+        <h1>FocusGuard</h1>
+      </div>
+      <button id="modePill" class="mode-pill" onclick="toggleConnPanel()">接続: 判定中...</button>
+    </header>
+
+    <div id="alertBox" class="alert"></div>
+
+    <!-- 稼働状況カード -->
+    <div class="card">
+      <h2>
+        <span>現在のブロック状態</span>
+        <span id="lastSyncText" class="muted">同期待機中</span>
+      </h2>
+      <div class="status-grid">
+        <div class="dev-box">
+          <div class="dev-name">Windows PC</div>
+          <div id="pcState" class="dev-state">待機中</div>
+          <div id="pcSub" class="dev-sub">—</div>
+        </div>
+        <div class="dev-box">
+          <div class="dev-name">Android スマホ</div>
+          <div id="androidState" class="dev-state">待機中</div>
+          <div id="androidSub" class="dev-sub">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 今すぐブロック開始カード -->
+    <div class="card">
+      <h2>今すぐブロックを指示（一括リモート）</h2>
+      <div class="level-grid">
+        <button class="lv-btn" data-lv="1" onclick="selectLevel(1)">
+          <strong>Lv.1 気づき</strong>
+          <span>15秒待機 → 一時許可可</span>
+        </button>
+        <button class="lv-btn active" data-lv="2" onclick="selectLevel(2)">
+          <strong>Lv.2 ひと手間</strong>
+          <span>フレーズ入力で解除</span>
+        </button>
+        <button class="lv-btn" data-lv="3" onclick="selectLevel(3)">
+          <strong>Lv.3 強制</strong>
+          <span>即終了・解除ロック</span>
+        </button>
+      </div>
+
+      <div class="row">
+        <div>
+          <label class="field">対象端末</label>
+          <select id="selTarget">
+            <option value="all">PC + スマホ 両方</option>
+            <option value="pc">Windows PC のみ</option>
+            <option value="android">Android スマホのみ</option>
+          </select>
+        </div>
+        <div>
+          <label class="field">継続時間</label>
+          <select id="selDuration">
+            <option value="15">15分</option>
+            <option value="30" selected>30分</option>
+            <option value="60">60分（1時間）</option>
+            <option value="120">120分（2時間）</option>
+            <option value="0">手動解除まで</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="startManual()">ブロックを開始する</button>
+        <button id="btnStop" class="btn btn-danger" onclick="stopManual()">手動ブロックを停止</button>
+      </div>
+    </div>
+
+    <!-- 時間帯スケジュールカード -->
+    <div class="card">
+      <h2>時間帯スケジュール</h2>
+      <div id="scheduleList"></div>
+
+      <details style="margin-top:12px;">
+        <summary>＋ 新しいスケジュールを追加</summary>
+        <div style="margin-top:12px;">
+          <div style="margin-bottom:10px;">
+            <label class="field">ルール名</label>
+            <input id="inSchedName" type="text" value="夜間デジタルデトックス" />
+          </div>
+          <div class="row">
+            <div>
+              <label class="field">開始時刻</label>
+              <input id="inSchedStart" type="time" value="23:00" />
+            </div>
+            <div>
+              <label class="field">終了時刻（日跨ぎOK）</label>
+              <input id="inSchedEnd" type="time" value="07:00" />
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label class="field">強度</label>
+              <select id="inSchedLv">
+                <option value="1">Lv.1 気づき</option>
+                <option value="2" selected>Lv.2 ひと手間</option>
+                <option value="3">Lv.3 強制ブロック</option>
+              </select>
+            </div>
+            <div>
+              <label class="field">対象</label>
+              <select id="inSchedTarget">
+                <option value="all">PC + スマホ 両方</option>
+                <option value="pc">PC のみ</option>
+                <option value="android">スマホのみ</option>
+              </select>
+            </div>
+          </div>
+          <label class="field">曜日</label>
+          <div id="dayPicker" class="days-wrap"></div>
+          <button class="btn btn-green" style="width:100%;" onclick="addSchedule()">スケジュールを保存</button>
+        </div>
+      </details>
+    </div>
+
+    <!-- Supabase 接続設定カード -->
+    <div id="connCard" class="card">
+      <h2>接続設定（ローカル / Supabase）</h2>
+      <p class="muted" style="margin-top:0;">
+        外出先のスマホから使う場合は、Supabase URL / Anon Key / Sync Key を入力して保存してください。
+        （PCアプリの「スマホ設定用ハッシュをコピー」でURL末尾に貼ると自動入力されます）
+      </p>
+      <div style="margin-bottom:8px;">
+        <label class="field">接続モード</label>
+        <select id="cfgMode">
+          <option value="auto">自動（localhostならローカル、それ以外はSupabase）</option>
+          <option value="supabase">Supabase に直接接続</option>
+          <option value="local">ローカル PC API (/api/state)</option>
+        </select>
+      </div>
+      <div style="margin-bottom:8px;">
+        <label class="field">Supabase URL</label>
+        <input id="cfgUrl" type="text" placeholder="https://xxxx.supabase.co" />
+      </div>
+      <div style="margin-bottom:8px;">
+        <label class="field">Supabase Anon Key</label>
+        <input id="cfgKey" type="password" placeholder="eyJ..." />
+      </div>
+      <div style="margin-bottom:12px;">
+        <label class="field">Sync Key（PCとスマホで共通の秘密キー）</label>
+        <input id="cfgSync" type="text" placeholder="8文字以上の秘密キー" />
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="saveConnConfig()">接続設定を保存して同期</button>
+        <button class="btn btn-danger" onclick="copyShareLink()">設定付きURLをコピー</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const DAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
+    const STORAGE_KEY = "focusguard_web_cfg_v1";
+
+    let selectedLevel = 2;
+    let selectedDays = [0, 1, 2, 3, 4, 5, 6];
+    let currentState = defaultState();
+    let cfg = loadConfig();
+
+    function defaultState() {
+      return {
+        version: 1,
+        updatedAt: Date.now(),
+        manualSession: { active: false, level: 2, target: "all", startedAt: 0, expiresAt: 0 },
+        schedules: [],
+        browsers: {
+          windows: ["chrome", "msedge", "firefox", "brave", "opera", "vivaldi", "arc"],
+          android: ["com.android.chrome", "org.mozilla.firefox", "com.microsoft.emmx", "com.brave.browser", "com.sec.android.app.sbrowser"]
+        },
+        lv1WaitSeconds: 15,
+        lv1AllowMinutes: 5,
+        lv2AllowMinutes: 10,
+        devices: { pc: { lastSeen: 0, status: "offline", effectiveLevel: 0 }, android: { lastSeen: 0, status: "offline", effectiveLevel: 0 } }
+      };
+    }
+
+    function loadConfig() {
+      let saved = { mode: "auto", url: "", key: "", sync: "" };
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) saved = Object.assign(saved, JSON.parse(raw));
+      } catch {}
+
+      // Import from URL hash (#url=...&key=...&sync=...)
+      if (location.hash && location.hash.length > 1) {
+        const params = new URLSearchParams(location.hash.slice(1));
+        if (params.get("url") && params.get("key") && params.get("sync")) {
+          saved.url = params.get("url");
+          saved.key = params.get("key");
+          saved.sync = params.get("sync");
+          saved.mode = "supabase";
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
+          history.replaceState(null, "", location.pathname + location.search);
+          setTimeout(() => showAlert("Supabase 接続設定をURLから読み込みました！", "ok"), 150);
+        }
+      }
+      return saved;
+    }
+
+    function getActiveMode() {
+      if (cfg.mode === "local") return "local";
+      if (cfg.mode === "supabase") return "supabase";
+      const isLocalHost = location.hostname === "localhost" || location.hostname === "127.0.0.1";
+      return isLocalHost ? "local" : "supabase";
+    }
+
+    function showAlert(msg, type = "ok") {
+      const box = document.getElementById("alertBox");
+      box.textContent = msg;
+      box.className = "alert show " + type;
+      clearTimeout(box._t);
+      box._t = setTimeout(() => box.classList.remove("show"), 4500);
+    }
+
+    function selectLevel(lv) {
+      selectedLevel = lv;
+      document.querySelectorAll(".lv-btn").forEach(b => {
+        b.classList.toggle("active", Number(b.dataset.lv) === lv);
+      });
+    }
+
+    function renderDayPicker() {
+      const el = document.getElementById("dayPicker");
+      el.innerHTML = "";
+      DAY_LABELS.forEach((lbl, idx) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "day-chip" + (selectedDays.includes(idx) ? " on" : "");
+        btn.textContent = lbl;
+        btn.onclick = () => {
+          if (selectedDays.includes(idx)) selectedDays = selectedDays.filter(d => d !== idx);
+          else selectedDays.push(idx);
+          renderDayPicker();
+        };
+        el.appendChild(btn);
+      });
+    }
+
+    function parseHHMM(str) {
+      if (!str || !str.includes(":")) return null;
+      const [h, m] = str.split(":").map(Number);
+      if (Number.isNaN(h) || Number.isNaN(m)) return null;
+      return h * 60 + m;
+    }
+
+    function evaluateDevice(state, device) {
+      const now = new Date();
+      const nowMs = Date.now();
+      const nowMin = now.getHours() * 60 + now.getMinutes();
+      const todayDow = now.getDay();
+      const yestDow = (todayDow + 6) % 7;
+
+      let best = { active: false, level: 0, reason: "待機中", endsAt: null };
+
+      const targetMatch = (t) => !t || t === "all" || t === device;
+
+      const ms = state.manualSession;
+      if (ms && ms.active && targetMatch(ms.target) && (!ms.expiresAt || ms.expiresAt > nowMs)) {
+        best = { active: true, level: ms.level || 2, reason: "手動集中モード", endsAt: ms.expiresAt || null };
+      }
+
+      for (const r of (state.schedules || [])) {
+        if (!r.enabled || !targetMatch(r.target) || !Array.isArray(r.days)) continue;
+        const s = parseHHMM(r.startTime);
+        const e = parseHHMM(r.endTime);
+        if (s === null || e === null) continue;
+        let active = false;
+        let endDt = null;
+        if (s === e && r.days.includes(todayDow)) {
+          active = true;
+          endDt = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+        } else if (s < e && r.days.includes(todayDow) && nowMin >= s && nowMin < e) {
+          active = true;
+          endDt = new Date(now.getFullYear(), now.getMonth(), now.getDate(), Math.floor(e / 60), e % 60);
+        } else if (s > e) {
+          if (r.days.includes(todayDow) && nowMin >= s) {
+            active = true;
+            endDt = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, Math.floor(e / 60), e % 60);
+          } else if (r.days.includes(yestDow) && nowMin < e) {
+            active = true;
+            endDt = new Date(now.getFullYear(), now.getMonth(), now.getDate(), Math.floor(e / 60), e % 60);
+          }
+        }
+        if (active && r.level > best.level) {
+          best = { active: true, level: r.level, reason: "スケジュール: " + (r.name || ""), endsAt: endDt ? endDt.getTime() : null };
+        }
+      }
+      return best;
+    }
+
+    function formatRemaining(endsAt) {
+      if (!endsAt) return "手動解除まで";
+      const sec = Math.max(0, Math.floor((endsAt - Date.now()) / 1000));
+      if (sec <= 0) return "まもなく終了";
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      const s = sec % 60;
+      if (h > 0) return `${h}時間${m}分`;
+      if (m > 0) return `${m}分${s}秒`;
+      return `${s}秒`;
+    }
+
+    function wouldWeakenHardLock(cur, next) {
+      for (const dev of ["pc", "android"]) {
+        const a = evaluateDevice(cur, dev);
+        if (a.active && a.level >= 3) {
+          const b = evaluateDevice(next, dev);
+          if (!b.active || b.level < 3) return true;
+        }
+      }
+      return false;
+    }
+
+    async function fetchState() {
+      const mode = getActiveMode();
+      document.getElementById("modePill").textContent = mode === "local" ? "接続: ローカルPC" : "接続: Supabase";
+
+      try {
+        if (mode === "local") {
+          const res = await fetch("/api/state");
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          const data = await res.json();
+          currentState = data.state || defaultState();
+          document.getElementById("lastSyncText").textContent = data.syncMessage || "ローカル同期済み";
+        } else {
+          if (!cfg.url || !cfg.key || !cfg.sync) {
+            document.getElementById("lastSyncText").textContent = "Supabase未設定（下の接続設定を入力）";
+            renderAll();
+            return;
+          }
+          const res = await fetch(`${cfg.url.replace(/\/$/, "")}/rest/v1/rpc/focus_guard_get`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "apikey": cfg.key,
+              "Authorization": "Bearer " + cfg.key
+            },
+            body: JSON.stringify({ p_sync_key: cfg.sync })
+          });
+          if (!res.ok) throw new Error("Supabase HTTP " + res.status);
+          const data = await res.json();
+          if (data && data.state) currentState = data.state;
+          document.getElementById("lastSyncText").textContent = "同期済み " + new Date().toLocaleTimeString();
+        }
+        renderAll();
+      } catch (err) {
+        document.getElementById("lastSyncText").textContent = "同期エラー: " + err.message;
+      }
+    }
+
+    async function pushState(nextState) {
+      if (wouldWeakenHardLock(currentState, nextState)) {
+        showAlert("Lv.3 ハードブロック中のため、終了時刻まで解除・引き下げはできません。", "err");
+        return false;
+      }
+      nextState.updatedAt = Date.now();
+      const mode = getActiveMode();
+
+      try {
+        if (mode === "local") {
+          const res = await fetch("/api/state", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(nextState)
+          });
+          const data = await res.json();
+          if (!res.ok || !data.ok) throw new Error(data.error || "更新失敗");
+          currentState = data.state || nextState;
+        } else {
+          if (!cfg.url || !cfg.key || !cfg.sync) {
+            showAlert("先に下の「接続設定」で Supabase の情報を保存してください。", "err");
+            return false;
+          }
+          const res = await fetch(`${cfg.url.replace(/\/$/, "")}/rest/v1/rpc/focus_guard_save`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "apikey": cfg.key,
+              "Authorization": "Bearer " + cfg.key
+            },
+            body: JSON.stringify({ p_sync_key: cfg.sync, p_state: nextState })
+          });
+          if (!res.ok) throw new Error("Supabase保存失敗 (" + res.status + ")");
+          currentState = nextState;
+        }
+        renderAll();
+        showAlert("両端末のルールを更新しました！", "ok");
+        return true;
+      } catch (err) {
+        showAlert("更新エラー: " + err.message, "err");
+        return false;
+      }
+    }
+
+    function renderAll() {
+      const pc = evaluateDevice(currentState, "pc");
+      const andr = evaluateDevice(currentState, "android");
+
+      const lvColor = (lv) => lv === 1 ? "var(--lv1)" : lv === 2 ? "var(--lv2)" : lv >= 3 ? "var(--lv3)" : "var(--green)";
+
+      const pcEl = document.getElementById("pcState");
+      pcEl.textContent = pc.active ? `Lv.${pc.level} ブロック中` : "待機中";
+      pcEl.style.color = lvColor(pc.level);
+      document.getElementById("pcSub").textContent = pc.active ? `${pc.reason} / 残り ${formatRemaining(pc.endsAt)}` : "通常利用OK";
+
+      const anEl = document.getElementById("androidState");
+      anEl.textContent = andr.active ? `Lv.${andr.level} ブロック中` : "待機中";
+      anEl.style.color = lvColor(andr.level);
+      document.getElementById("androidSub").textContent = andr.active ? `${andr.reason} / 残り ${formatRemaining(andr.endsAt)}` : "通常利用OK";
+
+      const maxLv = Math.max(pc.level, andr.level);
+      const dot = document.getElementById("statusDot");
+      dot.style.background = lvColor(maxLv);
+      dot.style.boxShadow = `0 0 12px ${lvColor(maxLv)}`;
+
+      const isHardLocked = (pc.active && pc.level >= 3) || (andr.active && andr.level >= 3);
+      const btnStop = document.getElementById("btnStop");
+      btnStop.disabled = isHardLocked;
+      btnStop.textContent = isHardLocked ? "Lv.3 ロック中" : "手動ブロックを停止";
+
+      // Schedules
+      const list = document.getElementById("scheduleList");
+      const scheds = currentState.schedules || [];
+      if (scheds.length === 0) {
+        list.innerHTML = '<div class="muted">スケジュールはまだ登録されていません。</div>';
+      } else {
+        list.innerHTML = "";
+        scheds.forEach(s => {
+          const daysStr = (s.days && s.days.length === 7)
+            ? "毎日"
+            : (s.days || []).slice().sort().map(d => DAY_LABELS[d]).join("");
+          const targetStr = s.target === "pc" ? "PCのみ" : s.target === "android" ? "スマホのみ" : "両方";
+          const div = document.createElement("div");
+          div.className = "sched-item" + (s.enabled ? "" : " off");
+          div.innerHTML = `
+            <div>
+              <div class="sched-title">${escapeHtml(s.name || "無題")} <span style="color:${lvColor(s.level)}">Lv.${s.level}</span></div>
+              <div class="sched-meta">${escapeHtml(s.startTime)} - ${escapeHtml(s.endTime)} / ${daysStr} / ${targetStr}</div>
+            </div>
+            <div style="display:flex; gap:6px;">
+              <button class="btn btn-sm ${s.enabled ? "btn-green" : "btn-danger"}" onclick="toggleSched('${s.id}')">${s.enabled ? "ON" : "OFF"}</button>
+              <button class="btn btn-sm" style="background:#5a242c;" onclick="deleteSched('${s.id}')">削除</button>
+            </div>
+          `;
+          list.appendChild(div);
+        });
+      }
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
+    }
+
+    async function startManual() {
+      const target = document.getElementById("selTarget").value;
+      let mins = Number(document.getElementById("selDuration").value);
+      if (selectedLevel === 3 && mins === 0) {
+        if (!confirm("Lv.3（強制ブロック）は安全のため 60分タイマー で開始します。よろしいですか？")) return;
+        mins = 60;
+      }
+      const next = JSON.parse(JSON.stringify(currentState));
+      const now = Date.now();
+      next.manualSession = {
+        active: true,
+        level: selectedLevel,
+        target,
+        startedAt: now,
+        expiresAt: mins > 0 ? now + mins * 60 * 1000 : 0
+      };
+      await pushState(next);
+    }
+
+    async function stopManual() {
+      const next = JSON.parse(JSON.stringify(currentState));
+      next.manualSession.active = false;
+      next.manualSession.expiresAt = 0;
+      await pushState(next);
+    }
+
+    async function addSchedule() {
+      if (selectedDays.length === 0) {
+        showAlert("曜日を1つ以上選択してください。", "err");
+        return;
+      }
+      const next = JSON.parse(JSON.stringify(currentState));
+      next.schedules = next.schedules || [];
+      next.schedules.push({
+        id: "sched-" + Math.random().toString(36).slice(2, 10),
+        name: document.getElementById("inSchedName").value.trim() || "集中スケジュール",
+        enabled: true,
+        days: selectedDays.slice().sort(),
+        startTime: document.getElementById("inSchedStart").value || "23:00",
+        endTime: document.getElementById("inSchedEnd").value || "07:00",
+        level: Number(document.getElementById("inSchedLv").value),
+        target: document.getElementById("inSchedTarget").value
+      });
+      await pushState(next);
+    }
+
+    async function toggleSched(id) {
+      const next = JSON.parse(JSON.stringify(currentState));
+      const item = (next.schedules || []).find(s => s.id === id);
+      if (!item) return;
+      item.enabled = !item.enabled;
+      await pushState(next);
+    }
+
+    async function deleteSched(id) {
+      const next = JSON.parse(JSON.stringify(currentState));
+      next.schedules = (next.schedules || []).filter(s => s.id !== id);
+      await pushState(next);
+    }
+
+    function saveConnConfig() {
+      cfg.mode = document.getElementById("cfgMode").value;
+      cfg.url = document.getElementById("cfgUrl").value.trim();
+      cfg.key = document.getElementById("cfgKey").value.trim();
+      cfg.sync = document.getElementById("cfgSync").value.trim();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
+      showAlert("接続設定を保存しました。", "ok");
+      fetchState();
+    }
+
+    function copyShareLink() {
+      const url = document.getElementById("cfgUrl").value.trim();
+      const key = document.getElementById("cfgKey").value.trim();
+      const sync = document.getElementById("cfgSync").value.trim();
+      if (!url || !key || !sync) {
+        showAlert("先に Supabase URL / Anon Key / Sync Key を入力してください。", "err");
+        return;
+      }
+      const full = `${location.origin}${location.pathname}#url=${encodeURIComponent(url)}&key=${encodeURIComponent(key)}&sync=${encodeURIComponent(sync)}`;
+      navigator.clipboard.writeText(full).then(
+        () => showAlert("設定付きURLをコピーしました！スマホで開くだけで接続完了します。", "ok"),
+        () => showAlert("コピーに失敗しました。", "err")
+      );
+    }
+
+    function toggleConnPanel() {
+      document.getElementById("connCard").scrollIntoView({ behavior: "smooth" });
+    }
+
+    function init() {
+      document.getElementById("cfgMode").value = cfg.mode || "auto";
+      document.getElementById("cfgUrl").value = cfg.url || "";
+      document.getElementById("cfgKey").value = cfg.key || "";
+      document.getElementById("cfgSync").value = cfg.sync || "";
+      renderDayPicker();
+      fetchState();
+      setInterval(fetchState, 4000);
+      setInterval(renderAll, 1000);
+    }
+
+    init();
+  </script>
+</body>
+</html>
