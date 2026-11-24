@@ -6,15 +6,12 @@ using Microsoft.Win32;
 namespace FocusGuard
 {
     /// <summary>
-    /// ホワイトリスト（ブロック中でも開けるサイト）。
-    /// Chrome / Edge / Brave には、ブラウザ公式の管理用設定（URLBlocklist と URLAllowlist）を
-    /// ユーザー単位のレジストリに書き込んで、リスト以外のサイトをブラウザ自身に止めさせる。
+    /// ホワイトリスト（ブロック中でも開けるサイト）の整形と判定。
+    /// Clear() は、以前の版がレジストリに書いた Chrome / Edge / Brave の設定を消すためだけに残している
+    /// （家庭用の PC の Chrome はこの設定を読まなかったため、URL はアドレスバーから読む方式に変えた）。
     /// </summary>
     public static class SiteAllowlist
     {
-        /// <summary>ポリシーでサイト単位に止められるブラウザのプロセス名</summary>
-        public static readonly string[] PolicyBrowsers = { "chrome", "msedge", "brave" };
-
         private static readonly string[] PolicyKeys =
         {
             @"Software\Policies\Google\Chrome",
@@ -71,43 +68,12 @@ namespace FocusGuard
             return false;
         }
 
-        public static bool IsPolicyBrowser(string processName)
+        public static bool IsAllowedHost(string host, List<string> sites)
         {
-            return PolicyBrowsers.Contains((processName ?? "").ToLowerInvariant());
-        }
-
-        /// <summary>ブロック中: リスト以外のサイトを止める設定を書き込む（消されていたら書き直す）</summary>
-        public static void Apply(List<string> sites)
-        {
-            string sig = string.Join(",", sites.ToArray());
-            if (sig == _appliedSignature && PoliciesPresent()) return;
-            foreach (var key in PolicyKeys)
-            {
-                try
-                {
-                    using (var root = Registry.CurrentUser.CreateSubKey(key))
-                    {
-                        if (root == null) continue;
-                        root.DeleteSubKeyTree("URLBlocklist", false);
-                        root.DeleteSubKeyTree("URLAllowlist", false);
-                        using (var block = root.CreateSubKey("URLBlocklist"))
-                            block.SetValue("1", "*", RegistryValueKind.String);
-                        using (var allow = root.CreateSubKey("URLAllowlist"))
-                        {
-                            for (int i = 0; i < sites.Count; i++)
-                                allow.SetValue((i + 1).ToString(), sites[i], RegistryValueKind.String);
-                        }
-                    }
-                }
-                catch { }
-            }
-            try
-            {
-                using (var m = Registry.CurrentUser.CreateSubKey(MarkerKey))
-                    m.SetValue(MarkerValue, 1, RegistryValueKind.DWord);
-            }
-            catch { }
-            _appliedSignature = sig;
+            if (string.IsNullOrEmpty(host) || sites == null) return false;
+            foreach (var s in sites)
+                if (host == s || host.EndsWith("." + s, StringComparison.Ordinal)) return true;
+            return false;
         }
 
         /// <summary>ブロックしていないとき: 書き込んだ設定を消す</summary>
@@ -142,20 +108,6 @@ namespace FocusGuard
             }
             catch { }
             _appliedSignature = null;
-        }
-
-        private static bool PoliciesPresent()
-        {
-            foreach (var key in PolicyKeys)
-            {
-                try
-                {
-                    using (var block = Registry.CurrentUser.OpenSubKey(key + @"\URLBlocklist"))
-                        if (block == null || (block.GetValue("1") as string) != "*") return false;
-                }
-                catch { return false; }
-            }
-            return true;
         }
     }
 }

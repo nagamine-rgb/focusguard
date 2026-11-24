@@ -57,6 +57,22 @@ namespace FocusGuard
             LastSyncOk = true;
         }
 
+        /// <summary>exe に埋め込んだ Web リモコン（web/index.html が隣にないとき用）</summary>
+        private static string ReadEmbeddedWebHtml()
+        {
+            try
+            {
+                using (var stream = System.Reflection.Assembly.GetExecutingAssembly().GetManifestResourceStream("FocusGuard.web.index.html"))
+                {
+                    if (stream != null)
+                        using (var reader = new StreamReader(stream, Encoding.UTF8))
+                            return reader.ReadToEnd();
+                }
+            }
+            catch { }
+            return "<html><body><h2>FocusGuard の Web リモコンが見つかりません</h2></body></html>";
+        }
+
         private static string ResolveDataDir(string exeDir)
         {
             string preferred = Path.Combine(
@@ -544,7 +560,7 @@ namespace FocusGuard
                         {
                             string html = File.Exists(_webHtmlPath)
                                 ? File.ReadAllText(_webHtmlPath, Encoding.UTF8)
-                                : "<html><body><h2>FocusGuard Web UI not found</h2></body></html>";
+                                : ReadEmbeddedWebHtml();
                             await WriteHttpResponseAsync(stream, 200, "OK", "text/html; charset=utf-8", html);
                             return;
                         }

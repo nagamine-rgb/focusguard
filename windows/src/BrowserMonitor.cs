@@ -37,29 +37,6 @@ namespace FocusGuard
             SiteAllowlist.Clear();
         }
 
-        /// <summary>ホワイトリスト運用中かどうか（PC がブロック中で、開けるサイトが1つ以上ある）</summary>
-        public static bool IsAllowlistMode(GuardState state, EffectiveBlockState eff)
-        {
-            return eff.IsActive && !eff.IsSnoozed && state.allowedSites != null && state.allowedSites.Count > 0;
-        }
-
-        /// <summary>
-        /// ホワイトリスト運用中の Lv.1 / Lv.2 で、ブラウザを一時的にすべて開ける入口。
-        /// Chrome などはサイトのブロックページから操作できないので、PC アプリから呼ぶ。
-        /// </summary>
-        public void RequestTemporaryOpen()
-        {
-            GuardState state = _sync.GetState();
-            EffectiveBlockState eff = RuleEngine.Evaluate(state, "pc", _sync.LocalSnoozeUntilMs);
-            if (!eff.IsActive || eff.IsSnoozed || eff.Level >= 3) return;
-            if (_isPromptOpen && _activeOverlay != null && !_activeOverlay.IsDisposed)
-            {
-                _activeOverlay.BringToFront();
-                return;
-            }
-            ShowFrictionOverlay(state, eff, "ブラウザのすべてのサイト", false);
-        }
-
         private void OnTick(object sender, EventArgs e)
         {
             GuardState state = _sync.GetState();
@@ -68,24 +45,66 @@ namespace FocusGuard
             var handler = TickEvaluated;
             if (handler != null) handler(eff);
 
+            // 以前の版（レジストリ方式）で書いた設定が残っていれば消す
+            SiteAllowlist.Clear();
+
             if (!eff.IsActive || eff.IsSnoozed)
             {
-                SiteAllowlist.Clear();
                 CloseOverlayIfAny();
                 return;
             }
 
-            // ホワイトリスト運用中: Chrome / Edge / Brave は開いたままにして、ブラウザ自身にサイトを止めさせる
-            bool allowlistMode = IsAllowlistMode(state, eff);
-            if (allowlistMode) SiteAllowlist.Apply(state.allowedSites);
-            else SiteAllowlist.Clear();
-
             List<Process> runningBrowsers = FindRunningBrowsers(state.browsers.windows);
-            if (allowlistMode)
-                runningBrowsers = runningBrowsers.Where(p => !SiteAllowlist.IsPolicyBrowser(p.ProcessName)).ToList();
+
+            // ホワイトリスト運用中: アドレスバーを読めるブラウザはサイト単位で判定する
+            var sites = state.allowedSites ?? new List<string>();
+            IntPtr blockedWindow = IntPtr.Zero;
+            string blockedHost = null;
+            if (sites.Count > 0)
+            {
+                var targetSet = new HashSet<string>(
+                    state.browsers.windows.Where(n => !string.IsNullOrWhiteSpace(n))
+                        .Select(n => n.Trim().ToLowerInvariant().Replace(".exe", "")));
+                var windows = BrowserUrlReader.VisibleBrowserWindows(targetSet);
+                BrowserUrlReader.Forget(windows.Select(w => w.Key));
+                var unreadable = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var w in windows)
+                {
+                    string host;
+                    int streak;
+                    var r = BrowserUrlReader.Read(w.Key, out host, out streak);
+                    if (r == BrowserUrlReader.ReadResult.Url && !SiteAllowlist.IsAllowedHost(host, sites))
+                    {
+                        if (blockedWindow == IntPtr.Zero) { blockedWindow = w.Key; blockedHost = host; }
+                    }
+                    else if (r == BrowserUrlReader.ReadResult.Unreadable && streak >= 3)
+                    {
+                        // URL を読めないときは安全側に倒して、そのブラウザはアプリごと止める
+                        unreadable.Add(w.Value);
+                    }
+                }
+                runningBrowsers = runningBrowsers
+                    .Where(p => !BrowserUrlReader.IsSupported(p.ProcessName) || unreadable.Contains(p.ProcessName.ToLowerInvariant()))
+                    .ToList();
+            }
+
+            if (blockedWindow != IntPtr.Zero)
+            {
+                if (eff.Level >= 3)
+                {
+                    // Lv.3: そのタブだけ閉じる（許可したサイトのタブは残る）
+                    CloseOverlayIfAny();
+                    BrowserUrlReader.CloseCurrentTab(blockedWindow);
+                    ShowHardBlockBanner(eff, blockedHost);
+                    return;
+                }
+                if (!BringExistingOverlay(eff)) ShowFrictionOverlay(state, eff, blockedHost, blockedWindow);
+                return;
+            }
+
             if (runningBrowsers.Count == 0)
             {
-                // User closed browsers on their own
+                // 止めるブラウザが開いていない
                 return;
             }
 
@@ -101,25 +120,31 @@ namespace FocusGuard
             }
             else if (eff.Level == 2 || eff.Level == 1)
             {
-                // Lv.1 / Lv.2: Show friction overlay if not already open
-                if (_isPromptOpen && _activeOverlay != null && !_activeOverlay.IsDisposed)
-                {
-                    if (_activeOverlay.BlockLevel != eff.Level)
-                    {
-                        CloseOverlayIfAny();
-                    }
-                    else
-                    {
-                        _activeOverlay.BringToFront();
-                        return;
-                    }
-                }
-
-                ShowFrictionOverlay(state, eff, detectedNames, true);
+                if (!BringExistingOverlay(eff)) ShowFrictionOverlay(state, eff, detectedNames, IntPtr.Zero);
             }
         }
 
-        private void ShowFrictionOverlay(GuardState state, EffectiveBlockState eff, string browserNames, bool closeBrowsersOnCancel)
+        /// <summary>同じ強さの待ち画面がすでに出ていれば前に出す</summary>
+        private bool BringExistingOverlay(EffectiveBlockState eff)
+        {
+            if (_isPromptOpen && _activeOverlay != null && !_activeOverlay.IsDisposed)
+            {
+                if (_activeOverlay.BlockLevel != eff.Level)
+                {
+                    CloseOverlayIfAny();
+                    return false;
+                }
+                _activeOverlay.BringToFront();
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Lv.1 / Lv.2 の待ち画面。tabWindow を渡したときはサイト単位のブロックで、
+        /// 「やめる」はそのタブを閉じるだけ（ブラウザ全体は閉じない）。
+        /// </summary>
+        private void ShowFrictionOverlay(GuardState state, EffectiveBlockState eff, string browserNames, IntPtr tabWindow)
         {
             _isPromptOpen = true;
             _activeOverlay = new OverlayForm(
@@ -130,16 +155,19 @@ namespace FocusGuard
                 state.lv1WaitSeconds,
                 state.lv1AllowMinutes,
                 state.lv2AllowMinutes);
-            _activeOverlay.Tag = closeBrowsersOnCancel ? "auto" : "manual";
 
             _activeOverlay.UserChoseCloseBrowser += () =>
             {
-                if (closeBrowsersOnCancel)
+                CloseOverlayIfAny();
+                if (tabWindow != IntPtr.Zero)
+                {
+                    BrowserUrlReader.CloseCurrentTab(tabWindow);
+                }
+                else
                 {
                     var targets = FindRunningBrowsers(_sync.GetState().browsers.windows);
                     KillProcesses(targets, false);
                 }
-                CloseOverlayIfAny();
             };
 
             _activeOverlay.UserChoseAllowTemporarily += (minutes) =>
