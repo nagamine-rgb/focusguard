@@ -3,6 +3,7 @@ $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $srcDir = Join-Path $scriptDir "src"
 $outExe = Join-Path $scriptDir "FocusGuard.exe"
+$iconPath = Join-Path $scriptDir "icon.ico"
 
 $fwDir = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319"
 $csc = Join-Path $fwDir "csc.exe"
@@ -21,6 +22,7 @@ Write-Host "Building FocusGuard.exe..." -ForegroundColor Cyan
     /optimize+ `
     /utf8output `
     /codepage:65001 `
+    /win32icon:$iconPath `
     /out:$outExe `
     /r:"$fwDir\System.dll" `
     /r:"$fwDir\System.Core.dll" `
