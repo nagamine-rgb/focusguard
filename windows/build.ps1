@@ -4,6 +4,8 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $srcDir = Join-Path $scriptDir "src"
 $outExe = Join-Path $scriptDir "FocusGuard.exe"
 $iconPath = Join-Path $scriptDir "icon.ico"
+# Web リモコンを exe に埋め込む（exe だけで更新しても「この PC の Web リモコン」が開けるように）
+$webHtml = Join-Path (Split-Path -Parent $scriptDir) "web\index.html"
 
 $fwDir = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319"
 $csc = Join-Path $fwDir "csc.exe"
@@ -23,6 +25,7 @@ Write-Host "Building FocusGuard.exe..." -ForegroundColor Cyan
     /utf8output `
     /codepage:65001 `
     /win32icon:$iconPath `
+    "/resource:$webHtml,FocusGuard.web.index.html" `
     /out:$outExe `
     /r:"$fwDir\System.dll" `
     /r:"$fwDir\System.Core.dll" `
@@ -30,6 +33,8 @@ Write-Host "Building FocusGuard.exe..." -ForegroundColor Cyan
     /r:"$fwDir\System.Windows.Forms.dll" `
     /r:"$fwDir\System.Net.Http.dll" `
     /r:"$fwDir\System.Web.Extensions.dll" `
+    /r:"$fwDir\WPF\UIAutomationClient.dll" `
+    /r:"$fwDir\WPF\UIAutomationTypes.dll" `
     $sources
 
 if ($LASTEXITCODE -ne 0) {

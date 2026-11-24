@@ -26,6 +26,9 @@ class BrowserBlockerService : AccessibilityService() {
     private var lastContentCheckAtMs: Long = 0L
     /** 最後に読めたサイト（ブラウザごと）。アドレスバーが一時的に隠れたときに使う */
     private val lastHostByPkg = mutableMapOf<String, String?>()
+    /** アドレスバーの入力中として止めずにおく最長時間（ずっと入力欄に触れたままの抜け道を防ぐ） */
+    private val editingSinceByPkg = mutableMapOf<String, Long>()
+    private val unreadableStreakByPkg = mutableMapOf<String, Int>()
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -94,12 +97,27 @@ class BrowserBlockerService : AccessibilityService() {
         var blockedHost: String? = null
         if (sites.isNotEmpty() && SiteAllowlist.urlBarIds.containsKey(pkg)) {
             val read = readUrlBar(pkg)
-            if (read.editing) return
-            val host = if (read.found) read.host else lastHostByPkg[pkg]
-            if (read.found) lastHostByPkg[pkg] = read.host
-            if (host == null) return
-            if (SiteAllowlist.isAllowed(host, sites)) return
-            blockedHost = host
+            val nowMs = System.currentTimeMillis()
+            if (read.editing) {
+                val since = editingSinceByPkg.getOrPut(pkg) { nowMs }
+                if (nowMs - since < 20_000L) return
+            } else {
+                editingSinceByPkg.remove(pkg)
+            }
+            if (read.found && !read.editing) {
+                unreadableStreakByPkg[pkg] = 0
+                lastHostByPkg[pkg] = read.host
+                val host = read.host ?: return          // 新しいタブ
+                if (SiteAllowlist.isAllowed(host, sites)) return
+                blockedHost = host
+            } else if (!read.found) {
+                // 読めないときは、少し待ってから安全側（アプリごと止める）に倒す
+                val streak = (unreadableStreakByPkg[pkg] ?: 0) + 1
+                unreadableStreakByPkg[pkg] = streak
+                if (streak < 3) return
+                // ここまで来たら blockedHost = null のまま → 従来どおりアプリごと止める
+            }
+            // 入力中が長すぎるときも blockedHost = null → アプリごと止める
         }
 
         val now = System.currentTimeMillis()
