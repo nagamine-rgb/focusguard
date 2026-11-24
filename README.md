@@ -69,3 +69,20 @@ Lv.2 の解除やブロック停止のときは、内蔵の名言（約100件）
 
 1. `shared/quotes.tsv` を編集します（1行に「本文<TAB>出典」）。
 2. `python3 tools/gen_quotes.py` を実行すると、`web/index.html`・`windows/src/Quotes.cs`・`android/.../Quotes.kt` が書き換わります。
+
+---
+
+## Android の署名（上書き更新に必要）
+
+Android は同じ鍵で署名された APK でないと上書きインストールできません。CI は GitHub Secrets の鍵で毎回同じ署名をします。
+
+リポジトリの **Settings → Secrets and variables → Actions → New repository secret** に次の4つを登録します。
+
+| 名前 | 中身 |
+| :--- | :--- |
+| `ANDROID_KEYSTORE_BASE64` | 鍵ファイル（.jks）を base64 にした文字列 |
+| `ANDROID_KEYSTORE_PASSWORD` | 鍵ファイルのパスワード |
+| `ANDROID_KEY_ALIAS` | `focusguard` |
+| `ANDROID_KEY_PASSWORD` | 鍵のパスワード（鍵ファイルと同じ） |
+
+鍵ファイルはなくすと二度と同じ署名ができません。パスワードと一緒に、パスワードマネージャーなど安全な場所に保管してください。
