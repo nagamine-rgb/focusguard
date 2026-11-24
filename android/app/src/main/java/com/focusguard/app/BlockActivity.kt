@@ -26,6 +26,8 @@ class BlockActivity : AppCompatActivity() {
 
     private var timer: CountDownTimer? = null
     private lateinit var repo: SyncRepository
+    /** サイト単位で止めたとき（ホワイトリスト運用中）は、やめる＝ブラウザの前のページへ戻る */
+    private var siteMode = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -59,6 +61,7 @@ class BlockActivity : AppCompatActivity() {
         val lv1AllowMin = intent.getIntExtra("lv1AllowMin", 5).coerceAtLeast(1)
         val lv2AllowMin = intent.getIntExtra("lv2AllowMin", 10).coerceAtLeast(1)
         val allowMin = if (level == 1) lv1AllowMin else lv2AllowMin
+        siteMode = intent.getBooleanExtra("siteMode", false)
 
         val accentColor = if (level == 1) Color.parseColor("#D9A21B") else Color.parseColor("#E07A45")
 
@@ -270,7 +273,7 @@ class BlockActivity : AppCompatActivity() {
 
         // Primary recommended action: close browser (go home)
         val btnHome = Button(this).apply {
-            text = "やめてホームに戻る"
+            text = if (siteMode) "やめて前のページに戻る" else "やめてホームに戻る"
             isAllCaps = false
             setTextColor(Color.parseColor("#1C2620"))
             textSize = 16f
@@ -293,6 +296,11 @@ class BlockActivity : AppCompatActivity() {
     }
 
     private fun goHomeAndFinish() {
+        if (siteMode) {
+            finish()
+            BrowserBlockerService.instance?.goBackInBrowser()
+            return
+        }
         val homeIntent = Intent(Intent.ACTION_MAIN).apply {
             addCategory(Intent.CATEGORY_HOME)
             flags = Intent.FLAG_ACTIVITY_NEW_TASK

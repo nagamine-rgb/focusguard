@@ -34,6 +34,30 @@ namespace FocusGuard
         {
             _timer.Stop();
             CloseOverlayIfAny();
+            SiteAllowlist.Clear();
+        }
+
+        /// <summary>ホワイトリスト運用中かどうか（PC がブロック中で、開けるサイトが1つ以上ある）</summary>
+        public static bool IsAllowlistMode(GuardState state, EffectiveBlockState eff)
+        {
+            return eff.IsActive && !eff.IsSnoozed && state.allowedSites != null && state.allowedSites.Count > 0;
+        }
+
+        /// <summary>
+        /// ホワイトリスト運用中の Lv.1 / Lv.2 で、ブラウザを一時的にすべて開ける入口。
+        /// Chrome などはサイトのブロックページから操作できないので、PC アプリから呼ぶ。
+        /// </summary>
+        public void RequestTemporaryOpen()
+        {
+            GuardState state = _sync.GetState();
+            EffectiveBlockState eff = RuleEngine.Evaluate(state, "pc", _sync.LocalSnoozeUntilMs);
+            if (!eff.IsActive || eff.IsSnoozed || eff.Level >= 3) return;
+            if (_isPromptOpen && _activeOverlay != null && !_activeOverlay.IsDisposed)
+            {
+                _activeOverlay.BringToFront();
+                return;
+            }
+            ShowFrictionOverlay(state, eff, "ブラウザのすべてのサイト", false);
         }
 
         private void OnTick(object sender, EventArgs e)
@@ -46,11 +70,19 @@ namespace FocusGuard
 
             if (!eff.IsActive || eff.IsSnoozed)
             {
+                SiteAllowlist.Clear();
                 CloseOverlayIfAny();
                 return;
             }
 
+            // ホワイトリスト運用中: Chrome / Edge / Brave は開いたままにして、ブラウザ自身にサイトを止めさせる
+            bool allowlistMode = IsAllowlistMode(state, eff);
+            if (allowlistMode) SiteAllowlist.Apply(state.allowedSites);
+            else SiteAllowlist.Clear();
+
             List<Process> runningBrowsers = FindRunningBrowsers(state.browsers.windows);
+            if (allowlistMode)
+                runningBrowsers = runningBrowsers.Where(p => !SiteAllowlist.IsPolicyBrowser(p.ProcessName)).ToList();
             if (runningBrowsers.Count == 0)
             {
                 // User closed browsers on their own
@@ -83,11 +115,11 @@ namespace FocusGuard
                     }
                 }
 
-                ShowFrictionOverlay(state, eff, detectedNames);
+                ShowFrictionOverlay(state, eff, detectedNames, true);
             }
         }
 
-        private void ShowFrictionOverlay(GuardState state, EffectiveBlockState eff, string browserNames)
+        private void ShowFrictionOverlay(GuardState state, EffectiveBlockState eff, string browserNames, bool closeBrowsersOnCancel)
         {
             _isPromptOpen = true;
             _activeOverlay = new OverlayForm(
@@ -98,11 +130,15 @@ namespace FocusGuard
                 state.lv1WaitSeconds,
                 state.lv1AllowMinutes,
                 state.lv2AllowMinutes);
+            _activeOverlay.Tag = closeBrowsersOnCancel ? "auto" : "manual";
 
             _activeOverlay.UserChoseCloseBrowser += () =>
             {
-                var targets = FindRunningBrowsers(_sync.GetState().browsers.windows);
-                KillProcesses(targets, false);
+                if (closeBrowsersOnCancel)
+                {
+                    var targets = FindRunningBrowsers(_sync.GetState().browsers.windows);
+                    KillProcesses(targets, false);
+                }
                 CloseOverlayIfAny();
             };
 
