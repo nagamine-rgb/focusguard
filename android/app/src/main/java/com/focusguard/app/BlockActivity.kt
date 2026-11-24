@@ -60,19 +60,19 @@ class BlockActivity : AppCompatActivity() {
         val lv2AllowMin = intent.getIntExtra("lv2AllowMin", 10).coerceAtLeast(1)
         val allowMin = if (level == 1) lv1AllowMin else lv2AllowMin
 
-        val accentColor = if (level == 1) Color.parseColor("#F5B942") else Color.parseColor("#F57642")
+        val accentColor = if (level == 1) Color.parseColor("#D9A21B") else Color.parseColor("#E07A45")
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setBackgroundColor(Color.parseColor("#0D1119"))
+            setBackgroundColor(Color.parseColor("#23302A"))
             setPadding(dp(20), dp(32), dp(20), dp(32))
         }
 
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#181F2E"))
+                setColor(Color.parseColor("#2C3B33"))
                 cornerRadius = dp(18).toFloat()
                 setStroke(dp(2), accentColor)
             }
@@ -84,12 +84,12 @@ class BlockActivity : AppCompatActivity() {
         }
 
         val badge = TextView(this).apply {
-            text = if (level == 1) "Lv.1  気づきモード（ソフト）" else "Lv.2  ひと手間モード（ミドル）"
+            text = if (level == 1) "Lv.1  気づき" else "Lv.2  ひと手間"
             setTextColor(accentColor)
             textSize = 13f
             setTypeface(null, Typeface.BOLD)
             background = GradientDrawable().apply {
-                setColor(if (level == 1) Color.parseColor("#3D3114") else Color.parseColor("#422114"))
+                setColor(if (level == 1) Color.parseColor("#3D3418") else Color.parseColor("#482C1E"))
                 cornerRadius = dp(8).toFloat()
             }
             setPadding(dp(12), dp(6), dp(12), dp(6))
@@ -102,20 +102,21 @@ class BlockActivity : AppCompatActivity() {
 
         val title = TextView(this).apply {
             text = if (level == 1) {
-                "ちょっと待って。\n本当に今「$appLabel」が必要？"
+                "「$appLabel」を開く前に、\nひと呼吸おきましょう。"
             } else {
-                "集中モード中です。\n「$appLabel」の起動を止めました。"
+                "「$appLabel」は\n集中時間のあいだ止めています。"
             }
-            setTextColor(Color.WHITE)
-            textSize = 20f
-            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.parseColor("#E9EEE6"))
+            textSize = 22f
+            typeface = Typeface.create(Typeface.SERIF, Typeface.BOLD)
+            setLineSpacing(0f, 1.2f)
             setPadding(0, dp(16), 0, dp(8))
         }
         card.addView(title)
 
         val meta = TextView(this).apply {
-            text = "理由: $reason  /  残り: $remaining\n対象アプリ: $appLabel ($browserPkg)"
-            setTextColor(Color.parseColor("#9BA8C2"))
+            text = "$reason　残り $remaining"
+            setTextColor(Color.parseColor("#B5C2B8"))
             textSize = 13f
             setPadding(0, 0, 0, dp(18))
         }
@@ -123,13 +124,13 @@ class BlockActivity : AppCompatActivity() {
 
         val btnAllow = Button(this).apply {
             isAllCaps = false
-            setTextColor(Color.parseColor("#B5C0D4"))
+            setTextColor(Color.parseColor("#B5C2B8"))
             textSize = 14f
             isEnabled = false
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#263042"))
+                setColor(Color.parseColor("#2C3B33"))
                 cornerRadius = dp(12).toFloat()
-                setStroke(dp(1), Color.parseColor("#3C4B66"))
+                setStroke(dp(1), Color.parseColor("#4B5F53"))
             }
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -143,7 +144,7 @@ class BlockActivity : AppCompatActivity() {
 
         if (level == 1) {
             val lblCountdown = TextView(this).apply {
-                text = "深呼吸して $lv1WaitSec 秒待ってください..."
+                text = "ゆっくり息を吸って、吐いて。あと $lv1WaitSec 秒"
                 setTextColor(Color.parseColor("#FFD266"))
                 textSize = 16f
                 setTypeface(null, Typeface.BOLD)
@@ -161,7 +162,7 @@ class BlockActivity : AppCompatActivity() {
             }
             card.addView(progress)
 
-            btnAllow.text = "あと ${lv1WaitSec} 秒で一時許可可能（${allowMin}分間）"
+            btnAllow.text = "あと ${lv1WaitSec} 秒で、${allowMin}分だけ開けられます"
 
             val totalMs = lv1WaitSec * 1000L
             timer = object : CountDownTimer(totalMs, 100L) {
@@ -169,17 +170,17 @@ class BlockActivity : AppCompatActivity() {
                     val sec = ((millisUntilFinished + 999L) / 1000L).toInt()
                     val elapsedSteps = ((totalMs - millisUntilFinished) / 100L).toInt()
                     progress.progress = elapsedSteps.coerceIn(0, progress.max)
-                    lblCountdown.text = "深呼吸して $sec 秒待ってください..."
-                    btnAllow.text = "あと $sec 秒で一時許可可能（${allowMin}分間）"
+                    lblCountdown.text = "ゆっくり息を吸って、吐いて。あと $sec 秒"
+                    btnAllow.text = "あと $sec 秒で、${allowMin}分だけ開けられます"
                 }
 
                 override fun onFinish() {
                     progress.progress = progress.max
-                    lblCountdown.text = "準備OK。必要な用事だけ済ませましょう。"
-                    lblCountdown.setTextColor(Color.parseColor("#7AE3A8"))
+                    lblCountdown.text = "開けられます。必要な用事だけ済ませましょう。"
+                    lblCountdown.setTextColor(Color.parseColor("#96D6AC"))
                     btnAllow.isEnabled = true
                     btnAllow.setTextColor(Color.WHITE)
-                    btnAllow.text = "${allowMin}分だけアプリを許可する"
+                    btnAllow.text = "${allowMin}分だけ開ける"
                 }
             }.start()
         } else {
@@ -187,7 +188,7 @@ class BlockActivity : AppCompatActivity() {
 
             val lblGuide = TextView(this).apply {
                 text = "どうしても今使うなら、下の言葉を手で入力してください（貼り付けはできません）："
-                setTextColor(Color.parseColor("#D9E2F2"))
+                setTextColor(Color.parseColor("#E9EEE6"))
                 textSize = 13f
                 setPadding(0, 0, 0, dp(8))
             }
@@ -195,13 +196,13 @@ class BlockActivity : AppCompatActivity() {
 
             val lblPhrase = TextView(this).apply {
                 text = targetQuote.text
-                setTextColor(Color.parseColor("#FFBE8C"))
+                setTextColor(Color.parseColor("#E9EEE6"))
                 textSize = 17f
                 setTypeface(null, Typeface.BOLD)
                 setLineSpacing(0f, 1.25f)
                 gravity = Gravity.START
                 background = GradientDrawable().apply {
-                    setColor(Color.parseColor("#101520"))
+                    setColor(Color.parseColor("#1D2823"))
                     cornerRadius = dp(10).toFloat()
                 }
                 setPadding(dp(12), dp(14), dp(12), dp(14))
@@ -214,7 +215,7 @@ class BlockActivity : AppCompatActivity() {
 
             val lblAuthor = TextView(this).apply {
                 text = "— ${targetQuote.author}"
-                setTextColor(Color.parseColor("#9BA8C2"))
+                setTextColor(Color.parseColor("#B5C2B8"))
                 textSize = 12f
                 gravity = Gravity.END
                 setPadding(0, 0, 0, dp(10))
@@ -223,14 +224,14 @@ class BlockActivity : AppCompatActivity() {
 
             val lblHint = TextView(this).apply {
                 text = Quotes.progress("", targetQuote)
-                setTextColor(Color.parseColor("#9BA8C2"))
+                setTextColor(Color.parseColor("#B5C2B8"))
                 textSize = 12f
                 setPadding(0, dp(4), 0, dp(14))
             }
 
             val input = EditText(this).apply {
                 hint = "ここに入力..."
-                setHintTextColor(Color.parseColor("#6B7791"))
+                setHintTextColor(Color.parseColor("#7F9185"))
                 setTextColor(Color.WHITE)
                 textSize = 16f
                 // 日本語入力の変換候補が出るよう NO_SUGGESTIONS は付けない
@@ -244,9 +245,9 @@ class BlockActivity : AppCompatActivity() {
                     override fun onDestroyActionMode(mode: ActionMode?) {}
                 }
                 background = GradientDrawable().apply {
-                    setColor(Color.parseColor("#20283A"))
+                    setColor(Color.parseColor("#1D2823"))
                     cornerRadius = dp(10).toFloat()
-                    setStroke(dp(1), Color.parseColor("#3B4B6B"))
+                    setStroke(dp(1), Color.parseColor("#4B5F53"))
                 }
                 setPadding(dp(14), dp(12), dp(14), dp(12))
                 addTextChangedListener(object : TextWatcher {
@@ -255,27 +256,27 @@ class BlockActivity : AppCompatActivity() {
                     override fun afterTextChanged(s: Editable?) {
                         val ok = Quotes.matches(s?.toString(), targetQuote)
                         btnAllow.isEnabled = ok
-                        btnAllow.setTextColor(if (ok) Color.WHITE else Color.parseColor("#8D99B2"))
+                        btnAllow.setTextColor(if (ok) Color.WHITE else Color.parseColor("#B5C2B8"))
                         lblHint.text = Quotes.progress(s?.toString(), targetQuote)
-                        lblHint.setTextColor(if (ok) Color.parseColor("#7AE3A8") else Color.parseColor("#9BA8C2"))
+                        lblHint.setTextColor(if (ok) Color.parseColor("#96D6AC") else Color.parseColor("#B5C2B8"))
                     }
                 })
             }
             card.addView(input)
             card.addView(lblHint)
 
-            btnAllow.text = "入力が一致したら ${allowMin}分だけ許可"
+            btnAllow.text = "入力が一致したら ${allowMin}分だけ開ける"
         }
 
         // Primary recommended action: close browser (go home)
         val btnHome = Button(this).apply {
-            text = "やっぱりやめる（ホームへ戻る）"
+            text = "やめてホームに戻る"
             isAllCaps = false
-            setTextColor(Color.WHITE)
+            setTextColor(Color.parseColor("#1C2620"))
             textSize = 16f
             setTypeface(null, Typeface.BOLD)
             background = GradientDrawable().apply {
-                setColor(Color.parseColor("#22995D"))
+                setColor(Color.parseColor("#E9EEE6"))
                 cornerRadius = dp(12).toFloat()
             }
             layoutParams = LinearLayout.LayoutParams(

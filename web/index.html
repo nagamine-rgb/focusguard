@@ -3,394 +3,426 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#0e121a" />
-  <title>FocusGuard — ブラウザブロック リモコン</title>
+  <meta name="theme-color" content="#E4E8E1" />
+  <title>FocusGuard — リモコン</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=Zen+Old+Mincho:wght@600;700&display=swap" rel="stylesheet" />
   <style>
     :root {
-      --bg: #0d1119;
-      --card: #171e2b;
-      --card-border: #263147;
-      --text: #eef2f9;
-      --sub: #95a4bf;
-      --primary: #3b82f6;
-      --green: #22c55e;
-      --lv1: #f5b942;
-      --lv2: #f57642;
-      --lv3: #ef4455;
-      --radius: 14px;
+      --ground: #E4E8E1;
+      --paper: #F3F5F1;
+      --well: #DDE3DA;
+      --ink: #1C2620;
+      --sub: #4D5A52;
+      --line: #B9C2B6;
+      --track: #CDD4CA;
+      --tick: #9AA597;
+      --sched: #7F8C7C;
+      --lv1: #D9A21B;
+      --lv2: #B4501E;
+      --lv3: #8E2424;
+      --lv1-text: #6E5200;
+      --lv2-text: #8A3A14;
+      --lv3-text: #8E2424;
+      --ok: #2E6B4A;
+      --serif: "Zen Old Mincho", "Hiragino Mincho ProN", "Yu Mincho", serif;
+      --sans: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
+    }
+    body.locked {
+      --ground: #ECE2DF;
+      --paper: #F7F0EE;
+      --well: #E6D9D5;
+      --sub: #5A4744;
+      --line: #C9B4B0;
+      --track: #DCCBC7;
+      --tick: #B8A29E;
+      --sched: #A8928E;
     }
     * { box-sizing: border-box; }
+    html { background: var(--ground); }
     body {
       margin: 0;
-      padding: 16px 14px 48px;
-      background: radial-gradient(circle at top right, #17233a 0%, var(--bg) 55%);
-      color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Meiryo", sans-serif;
-      line-height: 1.5;
+      padding: 18px 20px 56px;
+      background: var(--ground);
+      color: var(--ink);
+      font-family: var(--sans);
+      line-height: 1.6;
+      transition: background-color .4s ease;
     }
-    .wrap { max-width: 680px; margin: 0 auto; }
-    header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 16px;
-    }
-    .brand { display: flex; align-items: center; gap: 10px; }
-    .dot {
-      width: 12px; height: 12px; border-radius: 50%;
-      background: var(--green);
-      box-shadow: 0 0 12px var(--green);
-    }
-    h1 { font-size: 1.25rem; margin: 0; letter-spacing: 0.02em; }
-    .mode-pill {
-      font-size: 0.75rem;
-      padding: 4px 10px;
-      border-radius: 999px;
-      background: #1f2a3d;
-      color: #a9bee3;
-      border: 1px solid var(--card-border);
-      cursor: pointer;
-    }
-    .card {
-      background: rgba(23, 30, 43, 0.92);
-      border: 1px solid var(--card-border);
-      border-radius: var(--radius);
-      padding: 16px;
-      margin-bottom: 14px;
-    }
-    .card h2 {
-      font-size: 0.98rem;
-      margin: 0 0 12px;
-      color: #dce6f7;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .status-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-    }
-    .dev-box {
-      background: #111722;
-      border: 1px solid #222d42;
-      border-radius: 10px;
-      padding: 12px;
-    }
-    .dev-name { font-size: 0.78rem; color: var(--sub); margin-bottom: 4px; }
-    .dev-state { font-size: 1.05rem; font-weight: 700; }
-    .dev-sub { font-size: 0.76rem; color: var(--sub); margin-top: 4px; }
+    .wrap { max-width: 460px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
+    button, input, select { font-family: inherit; color: inherit; }
+    button { cursor: pointer; }
+    button:disabled { cursor: not-allowed; }
+    :focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+    h2 { margin: 0; font-family: var(--serif); font-size: 19px; font-weight: 700; }
+    .sub { font-size: 12px; color: var(--sub); }
 
-    .level-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 8px;
-      margin-bottom: 12px;
+    /* header */
+    header { display: flex; align-items: center; justify-content: space-between; }
+    .brand { display: flex; flex-direction: column; }
+    .brand-name { font-family: var(--serif); font-weight: 700; font-size: 22px; letter-spacing: .02em; line-height: 1.3; }
+    .head-right { display: flex; align-items: center; gap: 8px; }
+    .lock-pill {
+      display: none; align-items: center; gap: 6px; min-height: 32px; padding: 0 12px;
+      border-radius: 16px; background: var(--lv3); color: #FBEFEC; font-size: 13px; font-weight: 700;
     }
+    body.locked .lock-pill { display: flex; }
+    .icon-btn {
+      width: 44px; height: 44px; border-radius: 22px; border: 1px solid var(--line);
+      background: var(--paper); display: flex; align-items: center; justify-content: center;
+    }
+
+    /* dial */
+    .hero { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+    .dial { position: relative; width: 300px; height: 300px; max-width: 100%; }
+    #dialSvg { width: 100%; height: 100%; display: block; }
+    .dial-center {
+      position: absolute; inset: 0; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 2px; text-align: center; padding: 0 56px;
+    }
+    .dial-label { font-size: 13px; color: var(--sub); }
+    .dial-time { font-family: var(--serif); font-weight: 700; font-size: 56px; line-height: 1.05; font-variant-numeric: tabular-nums; }
+    .dial-time.small { font-size: 30px; line-height: 1.3; }
+    .dial-state { font-size: 13px; font-weight: 700; }
+    .dial-lock { display: none; }
+    body.locked .dial-lock { display: block; }
+    .legend { display: flex; gap: 16px; font-size: 12px; color: var(--sub); }
+    .legend span { display: flex; align-items: center; gap: 6px; }
+    .legend i { width: 14px; height: 6px; border-radius: 3px; display: block; }
+
+    /* devices */
+    .devices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .device { background: var(--paper); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; }
+    .device-state { font-size: 15px; font-weight: 700; }
+
+    /* panels */
+    .panel { background: var(--paper); border-radius: 22px; padding: 20px 18px; display: flex; flex-direction: column; gap: 18px; }
+    .group { display: flex; flex-direction: column; gap: 10px; }
+    .group-title { font-size: 13px; font-weight: 700; }
+    .desc { margin: 0; font-size: 13px; color: var(--sub); min-height: 21px; }
+
+    .levels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
     .lv-btn {
-      background: #111722;
-      border: 1.5px solid #28344b;
-      border-radius: 10px;
-      padding: 10px 8px;
-      color: var(--text);
-      cursor: pointer;
-      text-align: left;
-      transition: all 0.15s ease;
+      min-height: 76px; border-radius: 14px; border: 2px solid var(--line); background: transparent;
+      display: flex; flex-direction: column; align-items: flex-start; justify-content: space-between;
+      gap: 8px; padding: 12px; text-align: left;
     }
-    .lv-btn strong { display: block; font-size: 0.92rem; }
-    .lv-btn span { display: block; font-size: 0.72rem; color: var(--sub); margin-top: 2px; }
-    .lv-btn.active[data-lv="1"] { border-color: var(--lv1); background: rgba(245, 185, 66, 0.14); }
-    .lv-btn.active[data-lv="2"] { border-color: var(--lv2); background: rgba(245, 118, 66, 0.14); }
-    .lv-btn.active[data-lv="3"] { border-color: var(--lv3); background: rgba(239, 68, 85, 0.16); }
+    .lv-btn strong { font-size: 14px; }
+    .lv-btn.active { background: #FFFFFF; border-color: var(--ink); }
+    .bars { display: flex; align-items: flex-end; gap: 3px; height: 26px; }
+    .bars i { display: block; width: 8px; border-radius: 2px; background: #C3CBC0; }
+    .bars i:nth-child(1) { height: 10px; }
+    .bars i:nth-child(2) { height: 18px; }
+    .bars i:nth-child(3) { height: 26px; }
+    .lv-btn.active[data-lv="1"] .bars i:nth-child(-n+1) { background: var(--lv1); }
+    .lv-btn.active[data-lv="2"] .bars i:nth-child(-n+2) { background: var(--lv2); }
+    .lv-btn.active[data-lv="3"] .bars i:nth-child(-n+3) { background: var(--lv3); }
 
-    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
-    label.field { display: block; font-size: 0.78rem; color: var(--sub); margin-bottom: 4px; }
-    select, input[type="text"], input[type="time"], input[type="password"] {
-      width: 100%;
-      background: #101622;
-      color: var(--text);
-      border: 1px solid #2c3952;
-      border-radius: 9px;
-      padding: 10px 11px;
-      font-size: 0.92rem;
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip {
+      min-height: 44px; padding: 0 14px; border-radius: 22px; border: 1px solid var(--line);
+      background: transparent; font-size: 14px; font-weight: 500;
     }
-    .btn-row { display: grid; grid-template-columns: 1.3fr 1fr; gap: 10px; }
-    button.btn {
-      border: none;
-      border-radius: 10px;
-      padding: 12px 14px;
-      font-size: 0.94rem;
-      font-weight: 700;
-      cursor: pointer;
-      color: #fff;
-    }
-    .btn-primary { background: var(--primary); }
-    .btn-danger { background: #364156; }
-    .btn-green { background: #1e9e5a; }
-    .btn-sm { padding: 7px 11px; font-size: 0.8rem; border-radius: 8px; }
-    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    .chip.on { background: var(--ink); border-color: var(--ink); color: var(--paper); font-weight: 700; }
+    .seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; background: var(--well); border-radius: 12px; padding: 4px; }
+    .seg button { min-height: 44px; border: none; border-radius: 9px; background: transparent; font-size: 14px; font-weight: 500; }
+    .seg button.on { background: #FFFFFF; font-weight: 700; }
 
+    .btn-main {
+      min-height: 56px; border: none; border-radius: 16px; background: var(--ink); color: var(--paper);
+      font-size: 16px; font-weight: 700; box-shadow: inset 0 -4px 0 var(--accent, var(--lv2));
+    }
+    .btn-main:disabled { background: var(--line); color: var(--sub); box-shadow: none; }
+    .btn-line {
+      min-height: 48px; border-radius: 14px; border: 1px solid var(--line); background: transparent;
+      font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .btn-line:disabled { border-style: dashed; color: var(--sub); }
+    .btn-strong { min-height: 48px; border-radius: 14px; border: 2px solid var(--ink); background: #FFFFFF; font-size: 15px; font-weight: 700; }
+    .warn { margin: 0; font-size: 12px; color: var(--lv3-text); }
+    .lock-panel { display: none; }
+    body.locked .lock-panel { display: flex; }
+    .two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+
+    /* schedules */
+    .sec-head { display: flex; justify-content: space-between; align-items: center; }
+    .sched { background: var(--paper); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
+    .sched.off { opacity: .6; }
+    .sched-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+    .sched-name { font-size: 15px; font-weight: 700; }
+    .sched-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+    .switch { width: 52px; height: 32px; border-radius: 16px; border: none; background: var(--line); position: relative; flex-shrink: 0; }
+    .switch::after { content: ""; position: absolute; top: 4px; left: 4px; width: 24px; height: 24px; border-radius: 12px; background: var(--paper); transition: left .15s ease; }
+    .switch[aria-checked="true"] { background: var(--ink); }
+    .switch[aria-checked="true"]::after { left: 24px; }
+    .del { width: 44px; height: 44px; border-radius: 22px; border: none; background: transparent; display: flex; align-items: center; justify-content: center; color: var(--sub); }
+    .timeline { position: relative; height: 8px; border-radius: 4px; background: var(--well); overflow: hidden; }
+    .timeline i { position: absolute; top: 0; bottom: 0; display: block; }
+    .timeline-scale { display: flex; justify-content: space-between; font-size: 11px; color: var(--sub); }
+    .empty { font-size: 13px; color: var(--sub); padding: 4px 0 8px; }
+
+    details.add { background: var(--paper); border-radius: 14px; padding: 0 14px; }
+    details.add summary { min-height: 48px; display: flex; align-items: center; font-weight: 700; font-size: 14px; cursor: pointer; list-style: none; }
+    details.add summary::-webkit-details-marker { display: none; }
+    details.add[open] { padding-bottom: 14px; }
+    .form { display: flex; flex-direction: column; gap: 12px; }
+    .form-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    label.field { display: block; font-size: 12px; color: var(--sub); margin-bottom: 4px; }
+    input[type="text"], input[type="time"], input[type="password"], select {
+      width: 100%; min-height: 46px; background: #FFFFFF; border: 1px solid var(--line);
+      border-radius: 10px; padding: 0 12px; font-size: 15px;
+    }
+    .days { display: flex; gap: 6px; flex-wrap: wrap; }
+    .day-chip { width: 40px; height: 40px; border-radius: 20px; border: 1px solid var(--line); background: transparent; font-size: 14px; }
+    .day-chip.on { background: var(--ink); border-color: var(--ink); color: var(--paper); font-weight: 700; }
+
+    /* toast */
     .alert {
-      display: none;
-      padding: 10px 12px;
-      border-radius: 9px;
-      font-size: 0.84rem;
-      margin-bottom: 12px;
+      position: fixed; left: 50%; bottom: 20px; transform: translate(-50%, 20px); opacity: 0; pointer-events: none;
+      max-width: calc(100% - 32px); width: 440px; padding: 12px 16px; border-radius: 14px;
+      background: var(--ink); color: var(--paper); font-size: 14px; transition: opacity .2s ease, transform .2s ease; z-index: 60;
     }
-    .alert.show { display: block; }
-    .alert.err { background: rgba(239, 68, 85, 0.18); border: 1px solid var(--lv3); color: #ffb4bc; }
-    .alert.ok { background: rgba(34, 197, 94, 0.16); border: 1px solid var(--green); color: #a7f3c5; }
+    .alert.show { opacity: 1; transform: translate(-50%, 0); }
+    .alert.err { background: var(--lv3); color: #FBEFEC; }
 
-    .sched-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 10px;
-      background: #111722;
-      border: 1px solid #222d42;
-      border-radius: 10px;
-      padding: 10px 12px;
-      margin-bottom: 8px;
-    }
-    .sched-item.off { opacity: 0.55; }
-    .sched-title { font-weight: 700; font-size: 0.92rem; }
-    .sched-meta { font-size: 0.78rem; color: var(--sub); }
-    .days-wrap { display: flex; gap: 5px; flex-wrap: wrap; margin: 8px 0 12px; }
-    .day-chip {
-      padding: 6px 10px;
-      border-radius: 8px;
-      border: 1px solid #2c3952;
-      background: #101622;
-      color: var(--sub);
-      font-size: 0.82rem;
-      cursor: pointer;
-    }
-    .day-chip.on { background: #264980; border-color: var(--primary); color: #fff; font-weight: 700; }
-
-    details summary {
-      cursor: pointer;
-      font-weight: 700;
-      color: #c8d6ee;
-      list-style: none;
-    }
-    .muted { font-size: 0.78rem; color: var(--sub); }
-
+    /* sheets & modal */
     .modal-back {
-      position: fixed; inset: 0; background: rgba(5, 8, 14, 0.72);
-      display: none; align-items: center; justify-content: center; padding: 16px; z-index: 50;
+      position: fixed; inset: 0; background: rgba(28, 38, 32, .45);
+      display: none; align-items: flex-end; justify-content: center; z-index: 50;
     }
     .modal-back.show { display: flex; }
-    .modal {
-      width: 100%; max-width: 520px; background: var(--card);
-      border: 1.5px solid var(--lv2); border-radius: var(--radius); padding: 18px;
+    .sheet {
+      width: 100%; max-width: 520px; max-height: 92vh; overflow-y: auto; background: var(--ground);
+      border-radius: 22px 22px 0 0; padding: 20px 20px 28px; display: flex; flex-direction: column; gap: 16px;
     }
-    .modal h3 { margin: 0 0 6px; font-size: 1rem; }
-    .quote-box { background: #101622; border-radius: 10px; padding: 14px; margin: 12px 0; }
-    .quote-text { font-size: 1.12rem; font-weight: 700; line-height: 1.7; color: #ffcfae; user-select: none; -webkit-user-select: none; }
-    .quote-author { font-size: 0.8rem; color: var(--sub); margin-top: 6px; text-align: right; }
-    .quote-hint { font-size: 0.78rem; color: var(--sub); margin: 6px 0 12px; min-height: 1.2em; }
-    .quote-hint.ok { color: #a7f3c5; }
-    .quote-hint.ng { color: #ffb4bc; }
-    @media (max-width: 520px) {
-      .level-grid { grid-template-columns: 1fr; }
-      .row, .btn-row { grid-template-columns: 1fr; }
+    @media (min-width: 640px) {
+      .modal-back { align-items: center; }
+      .sheet { border-radius: 22px; }
     }
+    .sheet-head { display: flex; justify-content: space-between; align-items: center; }
+    .quote-box { background: var(--paper); border-radius: 14px; padding: 16px; }
+    .quote-text { font-family: var(--serif); font-size: 19px; font-weight: 700; line-height: 1.8; user-select: none; -webkit-user-select: none; }
+    .quote-author { font-size: 12px; color: var(--sub); margin-top: 6px; text-align: right; }
+    .quote-hint { font-size: 12px; color: var(--sub); margin-top: 6px; min-height: 1.2em; }
+    .quote-hint.ok { color: var(--ok); font-weight: 700; }
+    .quote-hint.ng { color: var(--lv3-text); }
+
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
   </style>
 </head>
 <body>
   <div class="wrap">
     <header>
       <div class="brand">
-        <div id="statusDot" class="dot"></div>
-        <h1>FocusGuard</h1>
+        <span class="brand-name">FocusGuard</span>
+        <span id="lastSyncText" class="sub">同期を待っています</span>
       </div>
-      <button id="modePill" class="mode-pill" onclick="toggleConnPanel()">接続: 判定中...</button>
+      <div class="head-right">
+        <span class="lock-pill">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+          Lv.3 ロック中
+        </span>
+        <button class="icon-btn" aria-label="接続と対象アプリの設定" onclick="openSettings()">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"></path></svg>
+        </button>
+      </div>
     </header>
 
-    <div id="alertBox" class="alert"></div>
-
-    <!-- 稼働状況カード -->
-    <div class="card">
-      <h2>
-        <span>現在のブロック状態</span>
-        <span id="lastSyncText" class="muted">同期待機中</span>
-      </h2>
-      <div class="status-grid">
-        <div class="dev-box">
-          <div class="dev-name">Windows PC</div>
-          <div id="pcState" class="dev-state">待機中</div>
-          <div id="pcSub" class="dev-sub">—</div>
-        </div>
-        <div class="dev-box">
-          <div class="dev-name">Android スマホ</div>
-          <div id="androidState" class="dev-state">待機中</div>
-          <div id="androidSub" class="dev-sub">—</div>
+    <section class="hero" aria-label="今日のブロック時間">
+      <div class="dial">
+        <svg id="dialSvg" viewBox="0 0 300 300" role="img" aria-label="24時間の文字盤"></svg>
+        <div class="dial-center">
+          <svg class="dial-lock" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--lv3)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+          <span id="dialLabel" class="dial-label">いまはブロックしていません</span>
+          <span id="dialTime" class="dial-time small">自由時間</span>
+          <span id="dialState" class="dial-state"></span>
         </div>
       </div>
-    </div>
-
-    <!-- 今すぐブロック開始カード -->
-    <div class="card">
-      <h2>今すぐブロックを指示（一括リモート）</h2>
-      <div class="level-grid">
-        <button class="lv-btn" data-lv="1" onclick="selectLevel(1)">
-          <strong>Lv.1 気づき</strong>
-          <span>15秒待機 → 一時許可可</span>
-        </button>
-        <button class="lv-btn active" data-lv="2" onclick="selectLevel(2)">
-          <strong>Lv.2 ひと手間</strong>
-          <span>名言の手入力で解除</span>
-        </button>
-        <button class="lv-btn" data-lv="3" onclick="selectLevel(3)">
-          <strong>Lv.3 強制</strong>
-          <span>即終了・解除ロック</span>
-        </button>
+      <div class="legend" aria-hidden="true">
+        <span><i id="legendNow" style="background: var(--lv2)"></i>いまのブロック</span>
+        <span><i style="background: var(--sched)"></i>今日のスケジュール</span>
       </div>
+    </section>
 
-      <div class="row">
-        <div>
-          <label class="field">対象端末</label>
-          <select id="selTarget">
-            <option value="all">PC + スマホ 両方</option>
-            <option value="pc">Windows PC のみ</option>
-            <option value="android">Android スマホのみ</option>
-          </select>
+    <section class="devices" aria-label="端末ごとの状態">
+      <div class="device">
+        <span class="sub">Windows PC</span>
+        <span id="pcState" class="device-state">ブロックなし</span>
+        <span id="pcSub" class="sub">—</span>
+      </div>
+      <div class="device">
+        <span class="sub">Android</span>
+        <span id="androidState" class="device-state">ブロックなし</span>
+        <span id="androidSub" class="sub">—</span>
+      </div>
+    </section>
+
+    <section class="panel lock-panel" aria-label="ロック中にできること">
+      <h2>ロック中にできること</h2>
+      <p class="desc">延ばすことと、止めるアプリを増やすことはできます。短くする・弱める・止めることはできません。</p>
+      <div class="two">
+        <button class="btn-strong" onclick="extendBlock(30)">30分延ばす</button>
+        <button class="btn-strong" onclick="extendBlock(60)">1時間延ばす</button>
+      </div>
+    </section>
+
+    <section class="panel" aria-label="新しくブロックする">
+      <h2>新しくブロックする</h2>
+      <div class="group">
+        <span class="group-title">強さ</span>
+        <div class="levels">
+          <button class="lv-btn" data-lv="1" aria-pressed="false" onclick="selectLevel(1)"><span class="bars"><i></i><i></i><i></i></span><strong>気づき</strong></button>
+          <button class="lv-btn active" data-lv="2" aria-pressed="true" onclick="selectLevel(2)"><span class="bars"><i></i><i></i><i></i></span><strong>ひと手間</strong></button>
+          <button class="lv-btn" data-lv="3" aria-pressed="false" onclick="selectLevel(3)"><span class="bars"><i></i><i></i><i></i></span><strong>強制</strong></button>
         </div>
-        <div>
-          <label class="field">継続時間</label>
-          <select id="selDuration">
-            <option value="15">15分</option>
-            <option value="30" selected>30分</option>
-            <option value="60">60分（1時間）</option>
-            <option value="120">120分（2時間）</option>
-            <option value="0">手動解除まで</option>
-          </select>
+        <p id="lvDesc" class="desc"></p>
+      </div>
+      <div class="group">
+        <span class="group-title">長さ</span>
+        <div id="durChips" class="chips">
+          <button class="chip" data-v="15">15分</button>
+          <button class="chip on" data-v="30">30分</button>
+          <button class="chip" data-v="60">1時間</button>
+          <button class="chip" data-v="120">2時間</button>
+          <button class="chip" data-v="0">手動で止めるまで</button>
         </div>
       </div>
-
-      <div class="btn-row">
-        <button class="btn btn-primary" onclick="startManual()">ブロックを開始する</button>
-        <button id="btnStop" class="btn btn-danger" onclick="stopManual()">手動ブロックを停止</button>
+      <div class="group">
+        <span class="group-title">止める端末</span>
+        <div id="tgtSeg" class="seg">
+          <button class="on" data-v="all">両方</button>
+          <button data-v="pc">PCだけ</button>
+          <button data-v="android">スマホだけ</button>
+        </div>
       </div>
-    </div>
+      <p id="lv3Warn" class="warn" hidden>Lv.3 は途中で止められないので、手動解除ではなく1時間で始めます。</p>
+      <button id="btnStart" class="btn-main" onclick="startManual()">30分ブロックする</button>
+      <button id="btnStop" class="btn-line" onclick="stopManual()">ブロックを止める</button>
+    </section>
 
-    <!-- 時間帯スケジュールカード -->
-    <div class="card">
-      <h2>時間帯スケジュール</h2>
+    <section aria-label="スケジュール">
+      <div class="sec-head" style="margin-bottom: 10px;">
+        <h2>スケジュール</h2>
+      </div>
       <div id="scheduleList"></div>
-
-      <details style="margin-top:12px;">
-        <summary>＋ 新しいスケジュールを追加</summary>
-        <div style="margin-top:12px;">
-          <div style="margin-bottom:10px;">
-            <label class="field">ルール名</label>
-            <input id="inSchedName" type="text" value="夜間デジタルデトックス" />
+      <details class="add">
+        <summary>スケジュールを追加</summary>
+        <div class="form">
+          <div>
+            <label class="field" for="inSchedName">名前</label>
+            <input id="inSchedName" type="text" value="夜のデジタルデトックス" />
           </div>
-          <div class="row">
+          <div class="form-row">
             <div>
-              <label class="field">開始時刻</label>
+              <label class="field" for="inSchedStart">始まり</label>
               <input id="inSchedStart" type="time" value="23:00" />
             </div>
             <div>
-              <label class="field">終了時刻（日跨ぎOK）</label>
+              <label class="field" for="inSchedEnd">終わり（翌日でもOK）</label>
               <input id="inSchedEnd" type="time" value="07:00" />
             </div>
           </div>
-          <div class="row">
+          <div class="form-row">
             <div>
-              <label class="field">強度</label>
+              <label class="field" for="inSchedLv">強さ</label>
               <select id="inSchedLv">
                 <option value="1">Lv.1 気づき</option>
                 <option value="2" selected>Lv.2 ひと手間</option>
-                <option value="3">Lv.3 強制ブロック</option>
+                <option value="3">Lv.3 強制</option>
               </select>
             </div>
             <div>
-              <label class="field">対象</label>
+              <label class="field" for="inSchedTarget">止める端末</label>
               <select id="inSchedTarget">
-                <option value="all">PC + スマホ 両方</option>
-                <option value="pc">PC のみ</option>
-                <option value="android">スマホのみ</option>
+                <option value="all">両方</option>
+                <option value="pc">PCだけ</option>
+                <option value="android">スマホだけ</option>
               </select>
             </div>
           </div>
-          <label class="field">曜日</label>
-          <div id="dayPicker" class="days-wrap"></div>
-          <button class="btn btn-green" style="width:100%;" onclick="addSchedule()">スケジュールを保存</button>
+          <div>
+            <span class="field">曜日</span>
+            <div id="dayPicker" class="days"></div>
+          </div>
+          <button class="btn-main" style="--accent: var(--sched)" onclick="addSchedule()">スケジュールを保存</button>
         </div>
       </details>
-    </div>
+    </section>
+  </div>
 
-    <!-- ブロック対象アプリカード -->
-    <div class="card">
-      <details>
-        <summary>ブロック対象アプリ一覧（ブラウザ・ゲーム・SNS）</summary>
-        <div style="margin-top:12px;">
-          <p class="muted" style="margin-top:0;">
-            スマホのゲームや SNS は Android アプリの「ブロックするアプリを選ぶ」から名前で簡単に選べます。ここからも直接追加・確認できます。
-          </p>
-          <div style="margin-bottom:10px;">
-            <label class="field">Windows PC 対象プロセス（カンマ区切り）</label>
-            <input id="inWinTargets" type="text" placeholder="chrome, msedge, steam, discord" />
-          </div>
-          <div style="margin-bottom:10px;">
-            <label class="field">Android 対象パッケージ（カンマ区切り）</label>
-            <input id="inAndTargets" type="text" placeholder="com.android.chrome, ..." />
-          </div>
-          <button class="btn btn-primary" style="width:100%;" onclick="saveTargetApps()">ブロック対象アプリを保存</button>
+  <div id="alertBox" class="alert" role="status" aria-live="polite"></div>
+
+  <div id="settingsSheet" class="modal-back" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+    <div class="sheet">
+      <div class="sheet-head">
+        <h2 id="settingsTitle">設定</h2>
+        <button class="icon-btn" aria-label="設定を閉じる" onclick="closeSettings()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+        </button>
+      </div>
+
+      <div class="panel">
+        <h2>止めるアプリ</h2>
+        <p class="desc">スマホのゲームや SNS は、Android アプリの「ブロックするアプリを選ぶ」から名前で選べます。</p>
+        <div>
+          <label class="field" for="inWinTargets">Windows のプロセス名（カンマ区切り）</label>
+          <input id="inWinTargets" type="text" placeholder="chrome, msedge, steam, discord" />
         </div>
-      </details>
-    </div>
+        <div>
+          <label class="field" for="inAndTargets">Android のパッケージ名（カンマ区切り）</label>
+          <input id="inAndTargets" type="text" placeholder="com.android.chrome, ..." />
+        </div>
+        <button class="btn-main" style="--accent: var(--sched)" onclick="saveTargetApps()">止めるアプリを保存</button>
+      </div>
 
-    <!-- Supabase 接続設定カード -->
-    <div id="connCard" class="card">
-      <h2>接続設定（ローカル / Supabase）</h2>
-      <p class="muted" style="margin-top:0;">
-        外出先のスマホから使う場合は、Supabase URL / Anon Key / Sync Key を入力して保存してください。
-        （PCアプリの「スマホ設定用ハッシュをコピー」でURL末尾に貼ると自動入力されます）
-      </p>
-      <div style="margin-bottom:8px;">
-        <label class="field">接続モード</label>
-        <select id="cfgMode">
-          <option value="auto">自動（localhostならローカル、それ以外はSupabase）</option>
-          <option value="supabase">Supabase に直接接続</option>
-          <option value="local">ローカル PC API (/api/state)</option>
-        </select>
-      </div>
-      <div style="margin-bottom:8px;">
-        <label class="field">Supabase URL</label>
-        <input id="cfgUrl" type="text" placeholder="https://xxxx.supabase.co" />
-      </div>
-      <div style="margin-bottom:8px;">
-        <label class="field">Supabase Anon Key</label>
-        <input id="cfgKey" type="password" placeholder="eyJ..." />
-      </div>
-      <div style="margin-bottom:12px;">
-        <label class="field">Sync Key（PCとスマホで共通の秘密キー）</label>
-        <input id="cfgSync" type="text" placeholder="8文字以上の秘密キー" />
-      </div>
-      <div class="btn-row">
-        <button class="btn btn-primary" onclick="saveConnConfig()">接続設定を保存して同期</button>
-        <button class="btn btn-danger" onclick="copyShareLink()">設定付きURLをコピー</button>
+      <div id="connCard" class="panel">
+        <div class="sec-head">
+          <h2>接続</h2>
+          <span id="modePill" class="sub">判定中</span>
+        </div>
+        <p class="desc">外出先のスマホから使うときは Supabase の情報を入れます。PC アプリの「スマホ設定用ハッシュをコピー」を URL の末尾に付けて開くと自動で入ります。</p>
+        <div>
+          <label class="field" for="cfgMode">接続先</label>
+          <select id="cfgMode">
+            <option value="auto">自動（localhost ならこの PC、それ以外は Supabase）</option>
+            <option value="supabase">Supabase</option>
+            <option value="local">この PC（/api/state）</option>
+          </select>
+        </div>
+        <div>
+          <label class="field" for="cfgUrl">Supabase URL</label>
+          <input id="cfgUrl" type="text" placeholder="https://xxxx.supabase.co" />
+        </div>
+        <div>
+          <label class="field" for="cfgKey">Supabase Anon Key</label>
+          <input id="cfgKey" type="password" placeholder="eyJ..." />
+        </div>
+        <div>
+          <label class="field" for="cfgSync">Sync Key（PC とスマホで同じ合言葉）</label>
+          <input id="cfgSync" type="text" placeholder="8文字以上" />
+        </div>
+        <button class="btn-main" style="--accent: var(--sched)" onclick="saveConnConfig()">接続を保存して同期</button>
+        <button class="btn-line" onclick="copyShareLink()">設定付きの URL をコピー</button>
       </div>
     </div>
   </div>
 
   <div id="quoteModal" class="modal-back" role="dialog" aria-modal="true" aria-labelledby="quoteTitle">
-    <div class="modal">
-      <h3 id="quoteTitle">Lv.2 確認</h3>
-      <div id="quoteMsg" class="muted"></div>
+    <div class="sheet">
+      <h2 id="quoteTitle">Lv.2 の確認</h2>
+      <div id="quoteMsg" class="desc"></div>
       <div class="quote-box">
         <div id="quoteText" class="quote-text"></div>
         <div id="quoteAuthor" class="quote-author"></div>
       </div>
-      <label class="field" for="quoteInput">上の言葉を手で入力してください（貼り付けはできません）</label>
-      <input id="quoteInput" type="text" autocomplete="off" spellcheck="false" />
-      <div id="quoteHint" class="quote-hint"></div>
-      <div class="btn-row">
-        <button id="quoteOk" class="btn btn-primary" disabled>確認して実行</button>
-        <button id="quoteCancel" class="btn btn-danger">キャンセル</button>
+      <div>
+        <label class="field" for="quoteInput">上の言葉を手で入力してください（貼り付けはできません）</label>
+        <input id="quoteInput" type="text" autocomplete="off" spellcheck="false" />
+        <div id="quoteHint" class="quote-hint"></div>
       </div>
+      <button id="quoteOk" class="btn-main" disabled>確認して実行</button>
+      <button id="quoteCancel" class="btn-line">やめる</button>
     </div>
   </div>
 
@@ -399,6 +431,17 @@
     const STORAGE_KEY = "focusguard_web_cfg_v1";
 
     let selectedLevel = 2;
+    let selectedDuration = 30;
+    let selectedTarget = "all";
+    const LV_COLOR = { 1: "var(--lv1)", 2: "var(--lv2)", 3: "var(--lv3)" };
+    const LV_TEXT = { 1: "var(--lv1-text)", 2: "var(--lv2-text)", 3: "var(--lv3-text)" };
+    const LV_NAME = { 1: "気づき", 2: "ひと手間", 3: "強制" };
+    const LV_DESC = {
+      1: "15秒待てば、5分だけ開けられます。",
+      2: "表示された名言を手で打てば、10分だけ開けられます。",
+      3: "すぐに閉じます。終わる時刻までだれも止められません。"
+    };
+    const DUR_LABEL = { 15: "15分", 30: "30分", 60: "1時間", 120: "2時間", 0: "手動で止めるまで" };
     let selectedDays = [0, 1, 2, 3, 4, 5, 6];
     let currentState = defaultState();
     let cfg = loadConfig();
@@ -437,7 +480,7 @@
           saved.mode = "supabase";
           localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
           history.replaceState(null, "", location.pathname + location.search);
-          setTimeout(() => showAlert("Supabase 接続設定をURLから読み込みました！", "ok"), 150);
+          setTimeout(() => showAlert("URL から Supabase の接続を読み込みました", "ok"), 150);
         }
       }
       return saved;
@@ -461,7 +504,31 @@
     function selectLevel(lv) {
       selectedLevel = lv;
       document.querySelectorAll(".lv-btn").forEach(b => {
-        b.classList.toggle("active", Number(b.dataset.lv) === lv);
+        const on = Number(b.dataset.lv) === lv;
+        b.classList.toggle("active", on);
+        b.setAttribute("aria-pressed", on ? "true" : "false");
+      });
+      renderStartControls();
+    }
+
+    function renderStartControls() {
+      document.getElementById("lvDesc").textContent = LV_DESC[selectedLevel];
+      const lv3NoEnd = selectedLevel === 3 && selectedDuration === 0;
+      document.getElementById("lv3Warn").hidden = !lv3NoEnd;
+      const btn = document.getElementById("btnStart");
+      btn.textContent = lv3NoEnd ? "1時間ブロックする"
+        : selectedDuration === 0 ? "手動で止めるまでブロックする"
+        : DUR_LABEL[selectedDuration] + "ブロックする";
+      btn.style.setProperty("--accent", LV_COLOR[selectedLevel]);
+      document.querySelectorAll("#durChips .chip").forEach(c => {
+        const on = Number(c.dataset.v) === selectedDuration;
+        c.classList.toggle("on", on);
+        c.setAttribute("aria-pressed", on ? "true" : "false");
+      });
+      document.querySelectorAll("#tgtSeg button").forEach(c => {
+        const on = c.dataset.v === selectedTarget;
+        c.classList.toggle("on", on);
+        c.setAttribute("aria-pressed", on ? "true" : "false");
       });
     }
 
@@ -757,7 +824,7 @@
 
     async function fetchState() {
       const mode = getActiveMode();
-      document.getElementById("modePill").textContent = mode === "local" ? "接続: ローカルPC" : "接続: Supabase";
+      document.getElementById("modePill").textContent = mode === "local" ? "この PC に接続" : "Supabase に接続";
 
       try {
         if (mode === "local") {
@@ -768,7 +835,7 @@
           document.getElementById("lastSyncText").textContent = data.syncMessage || "ローカル同期済み";
         } else {
           if (!cfg.url || !cfg.key || !cfg.sync) {
-            document.getElementById("lastSyncText").textContent = "Supabase未設定（下の接続設定を入力）";
+            document.getElementById("lastSyncText").textContent = "未接続（右上の設定から接続してください）";
             renderAll();
             return;
           }
@@ -784,11 +851,11 @@
           if (!res.ok) throw new Error("Supabase HTTP " + res.status);
           const data = await res.json();
           if (data && data.state) currentState = data.state;
-          document.getElementById("lastSyncText").textContent = "同期済み " + new Date().toLocaleTimeString();
+          document.getElementById("lastSyncText").textContent = "PCとスマホ、" + new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }) + "に同期";
         }
         renderAll();
       } catch (err) {
-        document.getElementById("lastSyncText").textContent = "同期エラー: " + err.message;
+        document.getElementById("lastSyncText").textContent = "同期できません（" + err.message + "）";
       }
     }
 
@@ -814,7 +881,7 @@
           currentState = data.state || nextState;
         } else {
           if (!cfg.url || !cfg.key || !cfg.sync) {
-            showAlert("先に下の「接続設定」で Supabase の情報を保存してください。", "err");
+            showAlert("先に右上の設定から Supabase の接続を保存してください。", "err");
             return false;
           }
           const res = await fetch(`${cfg.url.replace(/\/$/, "")}/rest/v1/rpc/focus_guard_save`, {
@@ -830,7 +897,7 @@
           currentState = nextState;
         }
         renderAll();
-        showAlert("両端末のルールを更新しました！", "ok");
+        showAlert("PCとスマホのルールを更新しました", "ok");
         return true;
       } catch (err) {
         showAlert("更新エラー: " + err.message, "err");
@@ -838,56 +905,174 @@
       }
     }
 
+    function fmtClock(ms) {
+      const d = new Date(ms);
+      return d.getHours() + ":" + String(d.getMinutes()).padStart(2, "0");
+    }
+
+    function formatBig(endsAt) {
+      const sec = Math.max(0, Math.floor((endsAt - Date.now()) / 1000));
+      const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s2 = sec % 60;
+      const pad = n => String(n).padStart(2, "0");
+      return h > 0 ? `${h}:${pad(m)}:${pad(s2)}` : `${m}:${pad(s2)}`;
+    }
+
+    // 24時間の文字盤: 今日のスケジュール（灰緑）、いまのブロック（強さの色）、現在時刻
+    function renderDial(state, top) {
+      const R = 120, C = 2 * Math.PI * R, CX = 150;
+      const arc = (startMin, lenMin, color) => {
+        if (lenMin <= 0) return "";
+        const len = Math.min(lenMin, 1440) / 1440 * C;
+        const rot = -90 + (startMin % 1440) / 1440 * 360;
+        return `<circle cx="${CX}" cy="${CX}" r="${R}" fill="none" stroke="${color}" stroke-width="18" stroke-dasharray="${len.toFixed(2)} ${(C - len + 0.01).toFixed(2)}" transform="rotate(${rot.toFixed(2)} ${CX} ${CX})"></circle>`;
+      };
+      const now = new Date();
+      const nowMin = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
+      const dow = now.getDay(), yest = (dow + 6) % 7;
+      let parts = [
+        `<circle cx="${CX}" cy="${CX}" r="136" fill="none" stroke="var(--tick)" stroke-width="6" stroke-dasharray="${(C * 136 / R / 24 * 0.04).toFixed(2)} ${(C * 136 / R / 24 * 0.96).toFixed(2)}"></circle>`,
+        `<circle cx="${CX}" cy="${CX}" r="${R}" fill="none" stroke="var(--track)" stroke-width="18"></circle>`
+      ];
+      for (const r of (state.schedules || [])) {
+        if (!r.enabled || !Array.isArray(r.days)) continue;
+        const sm = parseHHMM(r.startTime), em = parseHHMM(r.endTime);
+        if (sm === null || em === null) continue;
+        if (sm === em) { if (r.days.includes(dow)) parts.push(arc(0, 1440, "var(--sched)")); continue; }
+        if (sm < em) { if (r.days.includes(dow)) parts.push(arc(sm, em - sm, "var(--sched)")); continue; }
+        if (r.days.includes(dow)) parts.push(arc(sm, 1440 - sm, "var(--sched)"));
+        if (r.days.includes(yest)) parts.push(arc(0, em, "var(--sched)"));
+      }
+      if (top.active) {
+        const lenMin = top.endsAt ? (top.endsAt - Date.now()) / 60000 : 1440;
+        parts.push(arc(nowMin, Math.min(lenMin, 1440 - 0.5), LV_COLOR[top.level]));
+      }
+      const th = nowMin / 1440 * 2 * Math.PI;
+      const mx = CX + R * Math.sin(th), my = CX - R * Math.cos(th);
+      parts.push(`<circle cx="${mx.toFixed(1)}" cy="${my.toFixed(1)}" r="7" fill="var(--paper)" stroke="var(--ink)" stroke-width="2.5"></circle>`);
+      [["0", 150, 58], ["6", 244, 154], ["12", 150, 252], ["18", 56, 154]].forEach(([t, x, y]) => {
+        parts.push(`<text x="${x}" y="${y}" text-anchor="middle" font-size="12" fill="var(--sub)">${t}</text>`);
+      });
+      const svg = document.getElementById("dialSvg");
+      svg.innerHTML = parts.join("");
+      svg.setAttribute("aria-label", top.active
+        ? `24時間の文字盤。Lv.${top.level} で ${top.endsAt ? fmtClock(top.endsAt) + " までブロック中" : "手動で止めるまでブロック中"}`
+        : "24時間の文字盤。いまはブロックしていません");
+    }
+
+    function nextScheduleStart(state) {
+      const now = new Date();
+      const nowMin = now.getHours() * 60 + now.getMinutes();
+      let best = null;
+      for (let add = 0; add < 8; add++) {
+        const dow = (now.getDay() + add) % 7;
+        for (const r of (state.schedules || [])) {
+          if (!r.enabled || !Array.isArray(r.days) || !r.days.includes(dow)) continue;
+          const sm = parseHHMM(r.startTime);
+          if (sm === null || (add === 0 && sm <= nowMin)) continue;
+          const t = add * 1440 + sm;
+          if (best === null || t < best.t) best = { t, rule: r, add };
+        }
+        if (best) break;
+      }
+      return best;
+    }
+
     function renderAll() {
       const pc = evaluateDevice(currentState, "pc");
       const andr = evaluateDevice(currentState, "android");
+      const top = (andr.active && (!pc.active || andr.level > pc.level)) ? andr : pc;
 
-      const lvColor = (lv) => lv === 1 ? "var(--lv1)" : lv === 2 ? "var(--lv2)" : lv >= 3 ? "var(--lv3)" : "var(--green)";
-
-      const pcEl = document.getElementById("pcState");
-      pcEl.textContent = pc.active ? `Lv.${pc.level} ブロック中` : "待機中";
-      pcEl.style.color = lvColor(pc.level);
-      document.getElementById("pcSub").textContent = pc.active ? `${pc.reason} / 残り ${formatRemaining(pc.endsAt)}` : "通常利用OK";
-
-      const anEl = document.getElementById("androidState");
-      anEl.textContent = andr.active ? `Lv.${andr.level} ブロック中` : "待機中";
-      anEl.style.color = lvColor(andr.level);
-      document.getElementById("androidSub").textContent = andr.active ? `${andr.reason} / 残り ${formatRemaining(andr.endsAt)}` : "通常利用OK";
-
-      const maxLv = Math.max(pc.level, andr.level);
-      const dot = document.getElementById("statusDot");
-      dot.style.background = lvColor(maxLv);
-      dot.style.boxShadow = `0 0 12px ${lvColor(maxLv)}`;
+      const devText = (d, elState, elSub) => {
+        const st = document.getElementById(elState);
+        st.textContent = d.active ? `Lv.${d.level} ブロック中` : "ブロックなし";
+        st.style.color = d.active ? LV_TEXT[d.level] : "var(--ink)";
+        document.getElementById(elSub).textContent = d.active
+          ? (d.endsAt ? `${fmtClock(d.endsAt)} まで` : "手動で止めるまで")
+          : "いつも通り使えます";
+      };
+      devText(pc, "pcState", "pcSub");
+      devText(andr, "androidState", "androidSub");
 
       const isHardLocked = (pc.active && pc.level >= 3) || (andr.active && andr.level >= 3);
-      const btnStop = document.getElementById("btnStop");
-      btnStop.disabled = isHardLocked;
-      btnStop.textContent = isHardLocked ? "Lv.3 ロック中" : "手動ブロックを停止";
+      document.body.classList.toggle("locked", isHardLocked);
+      document.querySelector('meta[name="theme-color"]').setAttribute("content", isHardLocked ? "#ECE2DF" : "#E4E8E1");
 
-      // Schedules
+      // 文字盤の中央
+      const label = document.getElementById("dialLabel");
+      const time = document.getElementById("dialTime");
+      const stateEl = document.getElementById("dialState");
+      if (top.active) {
+        label.textContent = top.endsAt ? "ブロック終了まで" : "ブロック中";
+        time.textContent = top.endsAt ? formatBig(top.endsAt) : "手動解除まで";
+        time.classList.toggle("small", !top.endsAt);
+        stateEl.textContent = top.level >= 3
+          ? (top.endsAt ? `${fmtClock(top.endsAt)} まで解除できません` : "解除できません")
+          : `Lv.${top.level} ${LV_NAME[top.level]}で止めています`;
+        stateEl.style.color = LV_TEXT[top.level];
+        document.getElementById("legendNow").style.background = LV_COLOR[top.level];
+      } else {
+        const next = nextScheduleStart(currentState);
+        label.textContent = "いまはブロックしていません";
+        time.textContent = next ? (next.add === 0 ? "" : next.add === 1 ? "明日 " : `${next.add}日後 `) + next.rule.startTime : "自由時間";
+        time.classList.add("small");
+        stateEl.textContent = next ? `から「${next.rule.name || "スケジュール"}」` : "スケジュールはありません";
+        stateEl.style.color = "var(--sub)";
+        document.getElementById("legendNow").style.background = LV_COLOR[selectedLevel];
+      }
+      renderDial(currentState, top);
+
+      const btnStop = document.getElementById("btnStop");
+      const ms = currentState.manualSession || {};
+      const manualOn = ms.active && (!ms.expiresAt || ms.expiresAt > Date.now());
+      btnStop.disabled = isHardLocked || !manualOn;
+      if (isHardLocked) {
+        const lockEnd = Math.max(pc.level >= 3 && pc.endsAt ? pc.endsAt : 0, andr.level >= 3 && andr.endsAt ? andr.endsAt : 0);
+        btnStop.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>ブロックを止める（${lockEnd ? fmtClock(lockEnd) + " から" : "ロック中"}）`;
+      } else {
+        btnStop.textContent = manualOn ? "手動のブロックを止める" : "手動のブロックはありません";
+      }
+
+      // スケジュール
       const list = document.getElementById("scheduleList");
       const scheds = currentState.schedules || [];
       if (scheds.length === 0) {
-        list.innerHTML = '<div class="muted">スケジュールはまだ登録されていません。</div>';
+        list.innerHTML = '<div class="empty">まだありません。夜や作業時間など、毎日決まった時間に止めたいときに追加してください。</div>';
       } else {
         list.innerHTML = "";
-        scheds.forEach(s => {
-          const daysStr = (s.days && s.days.length === 7)
+        scheds.forEach(sc => {
+          const daysStr = (sc.days && sc.days.length === 7)
             ? "毎日"
-            : (s.days || []).slice().sort().map(d => DAY_LABELS[d]).join("");
-          const targetStr = s.target === "pc" ? "PCのみ" : s.target === "android" ? "スマホのみ" : "両方";
+            : (sc.days || []).slice().sort().map(d => DAY_LABELS[d]).join("・");
+          const targetStr = sc.target === "pc" ? "PCだけ" : sc.target === "android" ? "スマホだけ" : "両方";
+          const sm = parseHHMM(sc.startTime), em = parseHHMM(sc.endTime);
+          let bars = "";
+          if (sm !== null && em !== null) {
+            const pct = m => (m / 1440 * 100).toFixed(2) + "%";
+            const color = LV_COLOR[sc.level] || "var(--sched)";
+            if (sm === em) bars = `<i style="left:0;right:0;background:${color}"></i>`;
+            else if (sm < em) bars = `<i style="left:${pct(sm)};width:${pct(em - sm)};background:${color}"></i>`;
+            else bars = `<i style="left:0;width:${pct(em)};background:${color}"></i><i style="left:${pct(sm)};right:0;background:${color}"></i>`;
+          }
           const div = document.createElement("div");
-          div.className = "sched-item" + (s.enabled ? "" : " off");
+          div.className = "sched" + (sc.enabled ? "" : " off");
           div.innerHTML = `
-            <div>
-              <div class="sched-title">${escapeHtml(s.name || "無題")} <span style="color:${lvColor(s.level)}">Lv.${s.level}</span></div>
-              <div class="sched-meta">${escapeHtml(s.startTime)} - ${escapeHtml(s.endTime)} / ${daysStr} / ${targetStr}</div>
+            <div class="sched-row">
+              <div>
+                <div class="sched-name">${escapeHtml(sc.name || "無題")}</div>
+                <div class="sub">${daysStr} ${escapeHtml(sc.startTime)}〜${escapeHtml(sc.endTime)}、${targetStr}を Lv.${sc.level} ${LV_NAME[sc.level] || ""}で</div>
+              </div>
+              <div class="sched-actions">
+                <button class="switch" role="switch" aria-checked="${sc.enabled ? "true" : "false"}" aria-label="${escapeHtml(sc.name || "スケジュール")}を有効にする" data-act="toggle"></button>
+                <button class="del" aria-label="${escapeHtml(sc.name || "スケジュール")}を削除" data-act="del">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"></path></svg>
+                </button>
+              </div>
             </div>
-            <div style="display:flex; gap:6px;">
-              <button class="btn btn-sm ${s.enabled ? "btn-green" : "btn-danger"}" onclick="toggleSched('${s.id}')">${s.enabled ? "ON" : "OFF"}</button>
-              <button class="btn btn-sm" style="background:#5a242c;" onclick="deleteSched('${s.id}')">削除</button>
-            </div>
+            <div class="timeline" aria-hidden="true">${bars}</div>
+            <div class="timeline-scale" aria-hidden="true"><span>0時</span><span>6時</span><span>12時</span><span>18時</span><span>24時</span></div>
           `;
+          div.querySelector('[data-act="toggle"]').onclick = () => toggleSched(sc.id);
+          div.querySelector('[data-act="del"]').onclick = () => deleteSched(sc.id);
           list.appendChild(div);
         });
       }
@@ -900,6 +1085,26 @@
       if (andIn && document.activeElement !== andIn) {
         andIn.value = (currentState.browsers?.android || []).join(", ");
       }
+    }
+
+    // Lv.3 ロック中: 終了時刻を延ばす（短縮・解除はできない）
+    async function extendBlock(mins) {
+      const pc = evaluateDevice(currentState, "pc");
+      const an = evaluateDevice(currentState, "android");
+      const ends = [pc, an].filter(d => d.active && d.level >= 3).map(d => d.endsAt || 0);
+      if (ends.length === 0) return;
+      if (ends.some(e => e === 0)) { showAlert("手動で止めるまで続くブロックなので、延ばす必要はありません。", "ok"); return; }
+      const base = Math.max(...ends, Date.now());
+      const targets = new Set([pc.active && pc.level >= 3 ? "pc" : null, an.active && an.level >= 3 ? "android" : null].filter(Boolean));
+      const next = JSON.parse(JSON.stringify(currentState));
+      next.manualSession = {
+        active: true,
+        level: 3,
+        target: targets.size === 2 ? "all" : [...targets][0],
+        startedAt: Date.now(),
+        expiresAt: base + mins * 60 * 1000
+      };
+      await pushState(next);
     }
 
     async function saveTargetApps() {
@@ -926,12 +1131,9 @@
     }
 
     async function startManual() {
-      const target = document.getElementById("selTarget").value;
-      let mins = Number(document.getElementById("selDuration").value);
-      if (selectedLevel === 3 && mins === 0) {
-        if (!confirm("Lv.3（強制ブロック）は安全のため 60分タイマー で開始します。よろしいですか？")) return;
-        mins = 60;
-      }
+      const target = selectedTarget;
+      let mins = selectedDuration;
+      if (selectedLevel === 3 && mins === 0) mins = 60;
       const next = JSON.parse(JSON.stringify(currentState));
       const now = Date.now();
       next.manualSession = {
@@ -1015,7 +1217,8 @@
       cfg.key = document.getElementById("cfgKey").value.trim();
       cfg.sync = document.getElementById("cfgSync").value.trim();
       localStorage.setItem(STORAGE_KEY, JSON.stringify(cfg));
-      showAlert("接続設定を保存しました。", "ok");
+      showAlert("接続を保存しました", "ok");
+      closeSettings();
       fetchState();
     }
 
@@ -1024,18 +1227,21 @@
       const key = document.getElementById("cfgKey").value.trim();
       const sync = document.getElementById("cfgSync").value.trim();
       if (!url || !key || !sync) {
-        showAlert("先に Supabase URL / Anon Key / Sync Key を入力してください。", "err");
+        showAlert("Supabase URL・Anon Key・Sync Key をすべて入れてください。", "err");
         return;
       }
       const full = `${location.origin}${location.pathname}#url=${encodeURIComponent(url)}&key=${encodeURIComponent(key)}&sync=${encodeURIComponent(sync)}`;
       navigator.clipboard.writeText(full).then(
-        () => showAlert("設定付きURLをコピーしました！スマホで開くだけで接続完了します。", "ok"),
+        () => showAlert("URL をコピーしました。スマホで開くと接続まで済みます", "ok"),
         () => showAlert("コピーに失敗しました。", "err")
       );
     }
 
-    function toggleConnPanel() {
-      document.getElementById("connCard").scrollIntoView({ behavior: "smooth" });
+    function openSettings() {
+      document.getElementById("settingsSheet").classList.add("show");
+    }
+    function closeSettings() {
+      document.getElementById("settingsSheet").classList.remove("show");
     }
 
     function init() {
@@ -1044,6 +1250,19 @@
       document.getElementById("cfgKey").value = cfg.key || "";
       document.getElementById("cfgSync").value = cfg.sync || "";
       renderDayPicker();
+      document.querySelectorAll("#durChips .chip").forEach(c => {
+        c.onclick = () => { selectedDuration = Number(c.dataset.v); renderStartControls(); };
+      });
+      document.querySelectorAll("#tgtSeg button").forEach(c => {
+        c.onclick = () => { selectedTarget = c.dataset.v; renderStartControls(); };
+      });
+      document.getElementById("settingsSheet").addEventListener("click", e => {
+        if (e.target.id === "settingsSheet") closeSettings();
+      });
+      document.addEventListener("keydown", e => {
+        if (e.key === "Escape") closeSettings();
+      });
+      renderStartControls();
       fetchState();
       setInterval(fetchState, 4000);
       setInterval(renderAll, 1000);
