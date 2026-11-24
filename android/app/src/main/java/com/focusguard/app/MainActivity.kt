@@ -746,6 +746,7 @@ class MainActivity : AppCompatActivity() {
                 val cb = CheckBox(this).apply {
                     text = "${app.label}\n${app.pkg}"
                     setTextColor(Fg.ink)
+                    buttonTintList = ColorStateList.valueOf(Fg.ink)
                     textSize = 13.5f
                     isChecked = selectedSet.any { it.equals(app.pkg, ignoreCase = true) }
                     setPadding(dp(6), dp(8), dp(6), dp(8))
@@ -780,7 +781,7 @@ class MainActivity : AppCompatActivity() {
                 applyScheduleChangeWithLv2Check(next, "Lv.2 の間に止めるアプリを外すには、下の言葉を手で入力してください：")
             }
             .setNegativeButton("やめる", null)
-            .show()
+            .showStyled()
     }
 
     private fun renderSchedules(st: GuardState) {
@@ -861,7 +862,7 @@ class MainActivity : AppCompatActivity() {
                             applyScheduleChangeWithLv2Check(next, "動いている Lv.2 のスケジュールを削除するには、下の言葉を手で入力してください：")
                         }
                         .setNegativeButton("やめる", null)
-                        .show()
+                        .showStyled()
                 }
             })
             card.addView(row)
@@ -1033,7 +1034,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             .setNegativeButton("やめる", null)
-            .show()
+            .showStyled()
     }
 
     private fun showAddScheduleDialog() {
@@ -1053,7 +1054,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val dayChecks = Array(7) { idx ->
-            CheckBox(this).apply { text = dayLabels[idx]; isChecked = true }
+            CheckBox(this).apply { text = dayLabels[idx]; isChecked = true; buttonTintList = ColorStateList.valueOf(Fg.ink) }
         }
         val dayRow1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val dayRow2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -1102,7 +1103,7 @@ class MainActivity : AppCompatActivity() {
                 pushUpdatedState(next, "スケジュールを追加しました")
             }
             .setNegativeButton("やめる", null)
-            .show()
+            .showStyled()
     }
 
     private fun pushUpdatedState(next: GuardState, successToast: String = "更新しました", lv2ChallengePassed: Boolean = false) {
@@ -1116,6 +1117,21 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ===== 部品 =====
+
+    /**
+     * ダイアログを出して、ボタンの文字色をアプリの色で指定する。
+     * 標準のダイアログは端末の強調色を使うため、機種によってはボタンがほとんど見えない。
+     */
+    private fun AlertDialog.Builder.showStyled(): AlertDialog {
+        val d = show()
+        d.getButton(AlertDialog.BUTTON_POSITIVE)?.apply {
+            setTextColor(Fg.ink)
+            setTypeface(null, Typeface.BOLD)
+        }
+        d.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(Color.parseColor("#4D5A52"))
+        d.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(Color.parseColor("#4D5A52"))
+        return d
+    }
 
     private fun makeCard(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
