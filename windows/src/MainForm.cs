@@ -80,6 +80,7 @@ namespace FocusGuard
             BackColor = Theme.Ground;
             ForeColor = Theme.Ink;
             Font = Theme.UI(9.5f);
+            try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
 
             BuildLayout();
             LoadSettingsToUi();

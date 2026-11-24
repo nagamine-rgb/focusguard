@@ -16,8 +16,8 @@
     <application
         android:allowBackup="true"
         android:label="FocusGuard"
-        android:icon="@drawable/ic_launcher_fg"
-        android:roundIcon="@drawable/ic_launcher_fg"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.FocusGuard">
 

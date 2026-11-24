@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 文字盤のアイコン（tools/gen_icons.py と同じ寸法） -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M54,34.56 a19.44,19.44 0 1,1 0,38.88 a19.44,19.44 0 1,1 0,-38.88 Z"
+        android:strokeColor="#55FFFFFF"
+        android:strokeWidth="7.20"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M54,34.56 A19.44,19.44 0 0,1 70.84,63.72"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="7.20"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M63.64,63.72 a7.20,7.20 0 1,0 14.40,0 a7.20,7.20 0 1,0 -14.40,0 Z"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M65.65,63.72 a5.18,5.18 0 1,0 10.37,0 a5.18,5.18 0 1,0 -10.37,0 Z"
+        android:fillColor="#FFFFFFFF" />
+</vector>
