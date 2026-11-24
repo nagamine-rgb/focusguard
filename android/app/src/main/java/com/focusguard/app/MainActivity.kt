@@ -77,6 +77,7 @@ class MainActivity : AppCompatActivity() {
     // スケジュールと止めるアプリ
     private lateinit var scheduleContainer: LinearLayout
     private lateinit var txtTargetAppsSummary: TextView
+    private lateinit var inSites: EditText
     private var scheduleSignature: String? = null
 
     // 初期設定（権限と Supabase）
@@ -367,6 +368,21 @@ class MainActivity : AppCompatActivity() {
             (layoutParams as LinearLayout.LayoutParams).bottomMargin = dp(18)
         })
 
+        // ブロック中でも開けるサイト（ホワイトリスト）
+        val sitesCard = makeCard()
+        sitesCard.addView(makeSectionTitle("ブロック中でも開けるサイト"))
+        sitesCard.addView(makeSub("仕事で必要なサイトを1行に1つ（例: example.com）。どの強さのブロック中でも、このサイトだけは開けます。スマホは Chrome・Edge・Firefox・Samsung インターネット・Brave が対象で、ほかのブラウザはアプリごと止まります。", 13f).apply {
+            setPadding(0, 0, 0, dp(10))
+        })
+        inSites = makeInput("example.com\ndocs.google.com", false).apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_VARIATION_URI
+            minLines = 3
+            gravity = Gravity.TOP or Gravity.START
+        }
+        sitesCard.addView(inSites)
+        sitesCard.addView(makePrimaryButton("開けるサイトを保存") { saveAllowedSites() })
+        root.addView(sitesCard)
+
         // 止めるアプリ
         val appsCard = makeCard()
         appsCard.addView(makeSectionTitle("止めるアプリ"))
@@ -587,6 +603,10 @@ class MainActivity : AppCompatActivity() {
 
         renderSchedules(st)
         updateTargetAppsSummary(st)
+        if (!inSites.hasFocus()) {
+            val text = SiteAllowlist.normalizeList(st.allowedSites).joinToString("\n")
+            if (inSites.text.toString() != text) inSites.setText(text)
+        }
     }
 
     private fun setDevice(state: TextView, sub: TextView, eff: EffectiveBlockState) {
@@ -955,11 +975,11 @@ class MainActivity : AppCompatActivity() {
         pushUpdatedState(next, "手動のブロックを止めました", lv2ChallengePassed = false)
     }
 
-    private fun applyScheduleChangeWithLv2Check(proposed: GuardState, msg: String) {
+    private fun applyScheduleChangeWithLv2Check(proposed: GuardState, msg: String, successToast: String = "スケジュールを更新しました") {
         val cur = repo.getState()
         val errNo = RuleEngine.validateTransition(cur, proposed, lv2ChallengePassed = false)
         if (errNo == null) {
-            pushUpdatedState(proposed, "スケジュールを更新しました", lv2ChallengePassed = false)
+            pushUpdatedState(proposed, successToast, lv2ChallengePassed = false)
             return
         }
         val errHard = RuleEngine.validateTransition(cur, proposed, lv2ChallengePassed = true)
@@ -968,8 +988,25 @@ class MainActivity : AppCompatActivity() {
             return
         }
         showLv2ChallengeDialog(msg) {
-            pushUpdatedState(proposed, "スケジュールを更新しました", lv2ChallengePassed = true)
+            pushUpdatedState(proposed, successToast, lv2ChallengePassed = true)
         }
+    }
+
+    private fun saveAllowedSites() {
+        val lines = inSites.text.toString().split(Regex("[\\s,、]+")).filter { it.isNotBlank() }
+        val bad = lines.filter { SiteAllowlist.normalizeSite(it) == null }
+        if (bad.isNotEmpty()) {
+            toast("サイトとして読めないものがあります: ${bad.joinToString(" ")}（example.com のように入力してください）")
+            return
+        }
+        val next = repo.getState().deepCopy()
+        next.allowedSites = SiteAllowlist.normalizeList(lines).toMutableList()
+        inSites.clearFocus()
+        applyScheduleChangeWithLv2Check(
+            next,
+            "Lv.2 の間に開けるサイトを増やすには、下の言葉を手で入力してください：",
+            if (next.allowedSites.isEmpty()) "開けるサイトを空にしました" else "開けるサイトを保存しました（${next.allowedSites.size} 件）"
+        )
     }
 
     private fun showLv2ChallengeDialog(message: String, onSuccess: () -> Unit) {

@@ -171,6 +171,10 @@
     .form { display: flex; flex-direction: column; gap: 12px; }
     .form-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
     label.field { display: block; font-size: 12px; color: var(--sub); margin-bottom: 4px; }
+    textarea {
+      width: 100%; background: #FFFFFF; border: 1px solid var(--line); border-radius: 10px;
+      padding: 10px 12px; font-size: 15px; font-family: inherit; color: var(--ink); resize: vertical; line-height: 1.6;
+    }
     input[type="text"], input[type="time"], input[type="password"], select {
       width: 100%; min-height: 46px; background: #FFFFFF; border: 1px solid var(--line);
       border-radius: 10px; padding: 0 12px; font-size: 15px;
@@ -365,6 +369,16 @@
       </div>
 
       <div class="panel">
+        <h2>ブロック中でも開けるサイト</h2>
+        <p class="desc">仕事で必要なサイトを1行に1つ（例: example.com）。どの強さのブロック中でも、このサイトだけは開けます。PC は Chrome・Edge・Brave、スマホは Chrome・Edge・Firefox・Samsung インターネット・Brave が対象で、ほかのブラウザはアプリごと止まります。</p>
+        <div>
+          <label class="field" for="inSites">開けるサイト</label>
+          <textarea id="inSites" rows="4" placeholder="example.com&#10;docs.google.com" autocapitalize="off" autocomplete="off" spellcheck="false"></textarea>
+        </div>
+        <button class="btn-main" style="--accent: var(--sched)" onclick="saveAllowedSites()">開けるサイトを保存</button>
+      </div>
+
+      <div class="panel">
         <h2>止めるアプリ</h2>
         <p class="desc">スマホのゲームや SNS は、Android アプリの「ブロックするアプリを選ぶ」から名前で選べます。</p>
         <div>
@@ -461,6 +475,7 @@
         lv1WaitSeconds: 15,
         lv1AllowMinutes: 5,
         lv2AllowMinutes: 10,
+        allowedSites: [],
         devices: { pc: { lastSeen: 0, status: "offline", effectiveLevel: 0 }, android: { lastSeen: 0, status: "offline", effectiveLevel: 0 } }
       };
     }
@@ -621,6 +636,36 @@
       return false;
     }
 
+    // ホワイトリスト: 入力を「example.com」の形にそろえる（Windows / Android と同じ規則）
+    function normalizeSite(raw) {
+      let s = String(raw || "").trim().toLowerCase();
+      if (!s) return null;
+      const scheme = s.indexOf("://");
+      if (scheme >= 0) s = s.slice(scheme + 3);
+      s = s.split(/[\/?#]/)[0];
+      const at = s.lastIndexOf("@");
+      if (at >= 0) s = s.slice(at + 1);
+      s = s.split(":")[0].replace(/^[*.]+/, "");
+      if (s.startsWith("www.")) s = s.slice(4);
+      s = s.replace(/\.+$/, "");
+      if (!s || s.length > 253) return null;
+      if (s !== "localhost" && !s.includes(".")) return null;
+      if (!/^[\p{L}\p{N}.-]+$/u.test(s)) return null;
+      return s;
+    }
+    function normalizeSites(list) {
+      const out = [];
+      for (const x of (list || [])) {
+        const n = normalizeSite(x);
+        if (n && !out.includes(n)) out.push(n);
+      }
+      return out;
+    }
+    function addedAnySite(cur, next) {
+      const a = new Set(normalizeSites(cur?.allowedSites));
+      return normalizeSites(next?.allowedSites).some(x => !a.has(x));
+    }
+
     function removedAnyTarget(cur, next, dev) {
       const curList = (dev === "pc" ? cur?.browsers?.windows : cur?.browsers?.android) || [];
       const nextSet = new Set(((dev === "pc" ? next?.browsers?.windows : next?.browsers?.android) || []).map(x => String(x).trim().toLowerCase()));
@@ -641,6 +686,9 @@
           if (removedAnyTarget(cur, next, dev)) {
             return "Lv.3 ハードブロック中のため、ブロック対象アプリを外すことはできません（追加は可能です）。";
           }
+          if (addedAnySite(cur, next)) {
+            return "Lv.3 ハードブロック中のため、開けるサイトを増やすことはできません（減らすことは可能です）。";
+          }
         } else if (a.active && a.level === 2 && !lv2ChallengePassed) {
           if (!b.active) {
             return "Lv.2 ブロックを停止するには確認フレーズの入力が必要です。";
@@ -653,6 +701,9 @@
           }
           if (removedAnyTarget(cur, next, dev)) {
             return "Lv.2 稼働中にブロック対象アプリを外すには確認フレーズの入力が必要です（追加はそのまま可能です）。";
+          }
+          if (addedAnySite(cur, next)) {
+            return "Lv.2 稼働中に開けるサイトを増やすには、名言の入力が必要です（減らすことはそのまま可能です）。";
           }
         }
       }
@@ -1079,6 +1130,10 @@
         });
       }
 
+      const sitesIn = document.getElementById("inSites");
+      if (sitesIn && document.activeElement !== sitesIn) {
+        sitesIn.value = normalizeSites(currentState.allowedSites).join("\n");
+      }
       const winIn = document.getElementById("inWinTargets");
       const andIn = document.getElementById("inAndTargets");
       if (winIn && document.activeElement !== winIn) {
@@ -1107,6 +1162,26 @@
         expiresAt: base + mins * 60 * 1000
       };
       await pushState(next);
+    }
+
+    async function saveAllowedSites() {
+      const lines = document.getElementById("inSites").value.split(/[\s,、]+/).filter(Boolean);
+      const bad = lines.filter(l => !normalizeSite(l));
+      if (bad.length) {
+        showAlert("サイトとして読めないものがあります: " + bad.join(" ") + "（example.com のように入力してください）", "err");
+        return;
+      }
+      const next = JSON.parse(JSON.stringify(currentState));
+      next.allowedSites = normalizeSites(lines);
+      const errNo = validateTransition(currentState, next, false);
+      let ok;
+      if (errNo && !validateTransition(currentState, next, true)) {
+        if (!(await promptLv2Challenge("Lv.2 の間に開けるサイトを増やします。"))) return;
+        ok = await pushState(next, true);
+      } else {
+        ok = await pushState(next, false);
+      }
+      if (ok) document.getElementById("inSites").value = next.allowedSites.join("\n");
     }
 
     async function saveTargetApps() {

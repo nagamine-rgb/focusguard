@@ -153,6 +153,7 @@ namespace FocusGuard
             _sync = new SyncService();
             _monitor = new BrowserMonitor(_sync);
             _mainForm = new MainForm(_sync, ExitApplication);
+            _mainForm.TemporaryOpenRequested += () => _monitor.RequestTemporaryOpen();
 
             var menu = new ContextMenuStrip();
             menu.Items.Add("リモコンを開く", null, (s, e) => ShowMainWindow());

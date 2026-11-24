@@ -61,7 +61,9 @@ data class GuardState(
     var lv1AllowMinutes: Int = 5,
     var lv2AllowMinutes: Int = 10,
     var pcHeartbeat: DeviceHeartbeat = DeviceHeartbeat(),
-    var androidHeartbeat: DeviceHeartbeat = DeviceHeartbeat()
+    var androidHeartbeat: DeviceHeartbeat = DeviceHeartbeat(),
+    /** ブロック中でも開けるサイト（ホワイトリスト）。例: example.com */
+    var allowedSites: MutableList<String> = mutableListOf()
 ) {
     fun toJson(): JSONObject {
         val root = JSONObject()
@@ -105,6 +107,7 @@ data class GuardState(
         root.put("lv1WaitSeconds", lv1WaitSeconds)
         root.put("lv1AllowMinutes", lv1AllowMinutes)
         root.put("lv2AllowMinutes", lv2AllowMinutes)
+        root.put("allowedSites", JSONArray().apply { SiteAllowlist.normalizeList(allowedSites).forEach { put(it) } })
 
         val devs = JSONObject()
         devs.put("pc", JSONObject().apply {
@@ -190,6 +193,9 @@ data class GuardState(
             st.lv1WaitSeconds = obj.optInt("lv1WaitSeconds", 15).coerceAtLeast(3)
             st.lv1AllowMinutes = obj.optInt("lv1AllowMinutes", 5).coerceAtLeast(1)
             st.lv2AllowMinutes = obj.optInt("lv2AllowMinutes", 10).coerceAtLeast(1)
+            obj.optJSONArray("allowedSites")?.let { arr ->
+                st.allowedSites = SiteAllowlist.normalizeList((0 until arr.length()).map { arr.optString(it) }).toMutableList()
+            }
 
             obj.optJSONObject("devices")?.let { devs ->
                 devs.optJSONObject("pc")?.let { d ->

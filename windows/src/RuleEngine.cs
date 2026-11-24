@@ -179,6 +179,8 @@ namespace FocusGuard
                         return "Lv.3 ハードブロック中のため、残り時間を短縮することはできません。";
                     if (RemovedAnyTarget(current, proposed, dev))
                         return "Lv.3 ハードブロック中のため、ブロック対象アプリを外すことはできません（追加は可能です）。";
+                    if (SiteAllowlist.AddedAnySite(current, proposed))
+                        return "Lv.3 ハードブロック中のため、開けるサイトを増やすことはできません（減らすことは可能です）。";
                 }
                 // Lv.2: prevent silent downgrade (e.g. Lv.2 -> Lv.1), shortening, or removing apps unless explicit challenge passed
                 else if (cur.IsActive && cur.Level == 2 && !lv2ChallengePassed)
@@ -191,6 +193,8 @@ namespace FocusGuard
                         return "Lv.2 稼働中は残り時間を短縮できません（延長や Lv.3 への強化は可能です）。";
                     if (RemovedAnyTarget(current, proposed, dev))
                         return "Lv.2 稼働中にブロック対象アプリを外すには確認フレーズの入力が必要です（追加はそのまま可能です）。";
+                    if (SiteAllowlist.AddedAnySite(current, proposed))
+                        return "Lv.2 稼働中に開けるサイトを増やすには、名言の入力が必要です（減らすことはそのまま可能です）。";
                 }
             }
             return null;

@@ -64,6 +64,12 @@ namespace FocusGuard
 
         private bool _forceExit;
 
+        // ホワイトリスト
+        private TextBox _txtSites;
+        private PillButton _btnTempOpen;
+        /// <summary>ホワイトリスト運用中の Lv.1 / Lv.2 で「一時的にすべて開ける」が押された</summary>
+        public event Action TemporaryOpenRequested;
+
         private const int RightX = 372;
         private const int PageW = 440;
 
@@ -375,6 +381,16 @@ namespace FocusGuard
             _lockPanel.Visible = false;
             page.Controls.Add(_lockPanel);
 
+            _btnTempOpen = new PillButton("ブラウザを一時的にすべて開ける", PillKind.Line)
+            {
+                Size = new Size(PageW, 46),
+                BackColor = Theme.Ground,
+                Margin = new Padding(0, 0, 0, 14),
+                Visible = false
+            };
+            _btnTempOpen.Click += (s, e) => { var h = TemporaryOpenRequested; if (h != null) h(); };
+            page.Controls.Add(_btnTempOpen);
+
             var card = MakeCard(572);
             card.Controls.Add(MakeLabel("新しくブロックする", Theme.Serif(13f), Theme.Ink, 18, 14, 404, 30));
 
@@ -541,6 +557,20 @@ namespace FocusGuard
             });
             page.Controls.Add(conn);
 
+            var sites = MakeCard(300);
+            sites.Controls.Add(MakeLabel("ブロック中でも開けるサイト", Theme.Serif(12f), Theme.Ink, 18, 14, 404, 28));
+            sites.Controls.Add(MakeLabel("仕事で必要なサイトを1行に1つ（例: example.com）。どの強さのブロック中でも、Chrome・Edge・Brave でこのサイトだけ開けます。ほかのブラウザはアプリごと止まります。",
+                Theme.UI(8.5f), Theme.Sub, 18, 46, 404, 56));
+            _txtSites = MakeTextBox(18, 106, 404);
+            _txtSites.Multiline = true;
+            _txtSites.ScrollBars = ScrollBars.Vertical;
+            _txtSites.Height = 120;
+            sites.Controls.Add(_txtSites);
+            var btnSaveSites = new PillButton("開けるサイトを保存", PillKind.Primary) { Location = new Point(18, 236), Size = new Size(404, 48), BackColor = Theme.Paper };
+            btnSaveSites.Click += OnSaveAllowedSites;
+            sites.Controls.Add(btnSaveSites);
+            page.Controls.Add(sites);
+
             var apps = MakeCard(364);
             apps.Controls.Add(MakeLabel("止めるアプリと待ち時間", Theme.Serif(12f), Theme.Ink, 18, 14, 404, 28));
             apps.Controls.Add(MakeLabel("止めるプロセス名（カンマ区切り）", Theme.UI(8.5f), Theme.Sub, 18, 52, 400, 18));
@@ -605,6 +635,8 @@ namespace FocusGuard
                 bool hardLocked = effPc.IsHardLocked || effAndroid.IsHardLocked;
                 Theme.Apply(this, hardLocked);
                 _lockPanel.Visible = hardLocked;
+                var stNow = _sync.GetState();
+                _btnTempOpen.Visible = BrowserMonitor.IsAllowlistMode(stNow, effPc) && effPc.Level <= 2;
 
                 // 端末ごとの状態
                 SetDevice(_lblPcState, _lblPcSub, effPc, null);
@@ -811,6 +843,8 @@ namespace FocusGuard
             }
 
             _txtBrowsers.Text = string.Join(", ", st.browsers.windows);
+            if (!_txtSites.Focused)
+                _txtSites.Text = string.Join("\r\n", (st.allowedSites ?? new List<string>()).ToArray());
             _numLv1Wait.Value = Math.Max(_numLv1Wait.Minimum, Math.Min(_numLv1Wait.Maximum, st.lv1WaitSeconds));
             _numLv1Allow.Value = Math.Max(_numLv1Allow.Minimum, Math.Min(_numLv1Allow.Maximum, st.lv1AllowMinutes));
             _numLv2Allow.Value = Math.Max(_numLv2Allow.Minimum, Math.Min(_numLv2Allow.Maximum, st.lv2AllowMinutes));
@@ -968,22 +1002,45 @@ namespace FocusGuard
             ApplyScheduleChangeWithLv2Check(st, "動いている Lv.2 のスケジュールを削除するには、下の言葉を手で入力してください:");
         }
 
-        private void ApplyScheduleChangeWithLv2Check(GuardState proposed, string challengePrompt)
+        private bool ApplyScheduleChangeWithLv2Check(GuardState proposed, string challengePrompt)
         {
             string err;
-            if (_sync.UpdateState(proposed, out err, false)) return;
+            if (_sync.UpdateState(proposed, out err, false)) return true;
 
             // Lv.3 ではなく Lv.2 だけが理由なら、名言の入力で変更できる
             if (!RuleEngine.WouldWeakenHardLock(_sync.GetState(), proposed))
             {
                 if (PromptLv2Challenge(challengePrompt))
                 {
-                    if (!_sync.UpdateState(proposed, out err, true))
-                        MessageBox.Show(err, "変更できません", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    if (_sync.UpdateState(proposed, out err, true)) return true;
+                    MessageBox.Show(err, "変更できません", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
-                return;
+                return false;
             }
             MessageBox.Show(err, "変更できません", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return false;
+        }
+
+        private void OnSaveAllowedSites(object sender, EventArgs e)
+        {
+            var lines = _txtSites.Text.Split(new[] { '\r', '\n', ',', ' ', '　' }, StringSplitOptions.RemoveEmptyEntries);
+            var bad = lines.Where(l => SiteAllowlist.NormalizeSite(l) == null).ToList();
+            if (bad.Count > 0)
+            {
+                MessageBox.Show("サイトとして読めないものがあります:\r\n" + string.Join("\r\n", bad.ToArray()) + "\r\n\r\nexample.com のように入力してください。",
+                    "開けるサイト", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            var st = _sync.GetState();
+            st.allowedSites = SiteAllowlist.NormalizeList(lines);
+            if (ApplyScheduleChangeWithLv2Check(st, "Lv.2 の間に開けるサイトを増やすには、下の言葉を手で入力してください:"))
+            {
+                _txtSites.Text = string.Join("\r\n", st.allowedSites.ToArray());
+                MessageBox.Show(st.allowedSites.Count == 0
+                        ? "開けるサイトを空にしました。ブロック中はブラウザごと止まります。"
+                        : string.Format("{0} 件のサイトを保存しました。ブロック中も Chrome・Edge・Brave で開けます。", st.allowedSites.Count),
+                    "開けるサイト", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
         }
         private async void OnTestSupabase(object sender, EventArgs e)
         {

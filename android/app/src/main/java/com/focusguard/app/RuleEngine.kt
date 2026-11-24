@@ -123,6 +123,9 @@ object RuleEngine {
                 if (removedAnyTarget(current, proposed, dev)) {
                     return "Lv.3 ハードブロック中のため、ブロック対象アプリを外すことはできません（追加は可能です）。"
                 }
+                if (SiteAllowlist.addedAnySite(current, proposed)) {
+                    return "Lv.3 ハードブロック中のため、開けるサイトを増やすことはできません（減らすことは可能です）。"
+                }
             } else if (cur.isActive && cur.level == 2 && !lv2ChallengePassed) {
                 if (!next.isActive) {
                     return "Lv.2 ブロックを停止するには確認フレーズの入力が必要です。"
@@ -135,6 +138,9 @@ object RuleEngine {
                 }
                 if (removedAnyTarget(current, proposed, dev)) {
                     return "Lv.2 稼働中にブロック対象アプリを外すには確認フレーズの入力が必要です（追加はそのまま可能です）。"
+                }
+                if (SiteAllowlist.addedAnySite(current, proposed)) {
+                    return "Lv.2 稼働中に開けるサイトを増やすには、名言の入力が必要です（減らすことはそのまま可能です）。"
                 }
             }
         }

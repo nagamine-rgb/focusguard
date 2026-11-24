@@ -139,6 +139,8 @@ namespace FocusGuard
         public int lv1AllowMinutes { get; set; }
         public int lv2AllowMinutes { get; set; }
         public DevicesMap devices { get; set; }
+        /// <summary>ブロック中でも開けるサイト（ホワイトリスト）。例: example.com</summary>
+        public List<string> allowedSites { get; set; }
 
         public GuardState()
         {
@@ -164,6 +166,7 @@ namespace FocusGuard
             lv1AllowMinutes = 5;
             lv2AllowMinutes = 10;
             devices = new DevicesMap();
+            allowedSites = new List<string>();
         }
 
         public void EnsureDefaults()
@@ -191,6 +194,7 @@ namespace FocusGuard
             if (devices == null) devices = new DevicesMap();
             if (devices.pc == null) devices.pc = new DeviceHeartbeat();
             if (devices.android == null) devices.android = new DeviceHeartbeat();
+            allowedSites = SiteAllowlist.NormalizeList(allowedSites);
         }
     }
 
