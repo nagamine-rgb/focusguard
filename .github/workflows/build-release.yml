@@ -8,6 +8,12 @@ on:
       - "android/**"
       - "web/**"
       - ".github/workflows/build-release.yml"
+  pull_request:
+    paths:
+      - "windows/**"
+      - "android/**"
+      - "web/**"
+      - ".github/workflows/build-release.yml"
   workflow_dispatch:
 
 permissions:
@@ -72,6 +78,8 @@ jobs:
 
   publish-release:
     needs: [build-windows, build-android]
+    # PR ではビルドの確認だけ行い、リリースは公開しない
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Download Windows Artifacts

@@ -13,7 +13,7 @@ namespace FocusGuard
         private bool _allowClose;
         private int _remainingWaitSec;
         private readonly int _allowMinutes;
-        private string _targetPhrase;
+        private Quote _targetQuote;
 
         private Timer _countdownTimer;
         private Label _lblCountdown;
@@ -21,16 +21,6 @@ namespace FocusGuard
         private Button _btnAllow;
         private TextBox _txtPhrase;
         private Label _lblPhraseHint;
-
-        private static readonly string[] Phrases = new[]
-        {
-            "focus over impulse",
-            "choose calm over scroll",
-            "protect my attention",
-            "pause and breathe first",
-            "stay on my real goal",
-            "mindful screen time"
-        };
 
         public OverlayForm(
             int level,
@@ -81,7 +71,7 @@ namespace FocusGuard
         {
             Rectangle primary = Screen.PrimaryScreen.Bounds;
             int cardW = 540;
-            int cardH = level == 1 ? 400 : 440;
+            int cardH = level == 1 ? 400 : 560;
             int cardX = (primary.Left - Left) + (primary.Width - cardW) / 2;
             int cardY = (primary.Top - Top) + (primary.Height - cardH) / 2;
 
@@ -242,12 +232,11 @@ namespace FocusGuard
 
         private void BuildLv2Controls(Panel card, int cardW)
         {
-            var rnd = new Random();
-            _targetPhrase = Phrases[rnd.Next(Phrases.Length)] + " " + rnd.Next(100, 999);
+            _targetQuote = Quotes.Pick();
 
             var lblGuide = new Label
             {
-                Text = "一時的に使うには、下の確認フレーズを手入力してください（貼付不可）:",
+                Text = "どうしても今使うなら、下の言葉を手で入力してください（貼り付けはできません）:",
                 Font = new Font("Meiryo UI", 9.5f),
                 ForeColor = Color.FromArgb(220, 226, 238),
                 Location = new Point(32, 180),
@@ -257,25 +246,38 @@ namespace FocusGuard
 
             var lblPhraseBox = new Label
             {
-                Text = _targetPhrase,
-                Font = new Font("Consolas", 14f, FontStyle.Bold),
-                ForeColor = Color.FromArgb(255, 170, 110),
+                Text = _targetQuote.Text,
+                Font = new Font("Meiryo UI", 13f, FontStyle.Bold),
+                ForeColor = Color.FromArgb(255, 190, 140),
                 BackColor = Color.FromArgb(16, 20, 28),
-                TextAlign = ContentAlignment.MiddleCenter,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(12, 6, 12, 6),
                 Location = new Point(32, 208),
-                Size = new Size(cardW - 64, 40)
+                Size = new Size(cardW - 64, 96)
             };
             card.Controls.Add(lblPhraseBox);
 
+            var lblAuthor = new Label
+            {
+                Text = "— " + _targetQuote.Author,
+                Font = new Font("Meiryo UI", 9f),
+                ForeColor = Color.FromArgb(156, 168, 190),
+                TextAlign = ContentAlignment.MiddleRight,
+                Location = new Point(32, 306),
+                Size = new Size(cardW - 64, 22)
+            };
+            card.Controls.Add(lblAuthor);
+
             _txtPhrase = new TextBox
             {
-                Font = new Font("Consolas", 12.5f),
+                Font = new Font("Meiryo UI", 12f),
                 BackColor = Color.FromArgb(32, 38, 52),
                 ForeColor = Color.White,
                 BorderStyle = BorderStyle.FixedSingle,
-                Location = new Point(32, 256),
+                Location = new Point(32, 334),
                 Size = new Size(cardW - 64, 32),
-                ShortcutsEnabled = false
+                ShortcutsEnabled = false,
+                ImeMode = ImeMode.On
             };
             _txtPhrase.KeyDown += (s, e) =>
             {
@@ -286,27 +288,27 @@ namespace FocusGuard
             };
             _txtPhrase.TextChanged += (s, e) =>
             {
-                bool match = string.Equals(_txtPhrase.Text.Trim(), _targetPhrase, StringComparison.Ordinal);
+                bool match = Quotes.Matches(_txtPhrase.Text, _targetQuote);
                 _btnAllow.Enabled = match;
                 _btnAllow.ForeColor = match ? Color.White : Color.FromArgb(150, 160, 180);
-                _lblPhraseHint.Text = match ? "一致しました。一時許可できます。" : "正確に入力してください";
+                _lblPhraseHint.Text = Quotes.Progress(_txtPhrase.Text, _targetQuote);
                 _lblPhraseHint.ForeColor = match ? Color.FromArgb(110, 220, 150) : Color.FromArgb(140, 150, 170);
             };
             card.Controls.Add(_txtPhrase);
 
             _lblPhraseHint = new Label
             {
-                Text = "正確に入力してください",
+                Text = Quotes.Progress("", _targetQuote),
                 Font = new Font("Meiryo UI", 8.5f),
                 ForeColor = Color.FromArgb(140, 150, 170),
-                Location = new Point(32, 290),
+                Location = new Point(32, 370),
                 Size = new Size(cardW - 64, 20)
             };
             card.Controls.Add(_lblPhraseHint);
 
             _btnAllow = new Button
             {
-                Text = string.Format("フレーズを入力して {0}分だけ許可する", _allowMinutes),
+                Text = string.Format("入力が一致したら {0}分だけ許可する", _allowMinutes),
                 Font = new Font("Meiryo UI", 9.5f),
                 ForeColor = Color.FromArgb(150, 160, 180),
                 BackColor = Color.FromArgb(40, 48, 62),
