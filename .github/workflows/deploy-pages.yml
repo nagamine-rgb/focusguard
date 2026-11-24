@@ -15,10 +15,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  # アップロードと公開を別ジョブに分ける（GitHub 公式のひな形と同じ構成）。
+  # 同じジョブで続けて実行すると、アップロード直後に公開側が
+  # 「github-pages アーティファクトが0件」と判定して失敗することがある。
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -29,6 +29,14 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: "web"
+
+  deploy:
+    needs: build
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
