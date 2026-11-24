@@ -39,16 +39,17 @@ jobs:
           Compress-Archive -Path dist-win/* -DestinationPath FocusGuard-Windows.zip -Force
 
       # インストーラー（FocusGuard-Setup.exe）を Inno Setup で作る
+      # Windows PowerShell 5 は一時スクリプトの日本語を読み違えるので、pwsh で英語のメッセージにする
       - name: Build installer
-        shell: powershell
+        shell: pwsh
         run: |
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) {
             choco install innosetup -y --no-progress | Out-Null
           }
-          if (-not (Test-Path $iscc)) { throw "Inno Setup (ISCC.exe) が見つかりません" }
+          if (-not (Test-Path $iscc)) { throw "Inno Setup (ISCC.exe) was not found" }
           & $iscc "/DAppVersion=1.0.${{ github.run_number }}" windows\installer.iss
-          if ($LASTEXITCODE -ne 0) { throw "インストーラーの作成に失敗しました" }
+          if ($LASTEXITCODE -ne 0) { throw "Installer build failed" }
           Get-Item FocusGuard-Setup.exe | Select-Object Name, Length
 
       - name: Upload Windows Artifacts
