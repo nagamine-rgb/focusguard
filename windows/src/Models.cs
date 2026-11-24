@@ -14,6 +14,8 @@ namespace FocusGuard
         public int PollIntervalSeconds { get; set; }
         public bool StartMinimized { get; set; }
         public bool StartWithWindows { get; set; }
+        /// <summary>リモコンのウィンドウを常に最前面に表示する</summary>
+        public bool AlwaysOnTop { get; set; }
 
         public AppSettings()
         {
@@ -43,6 +45,19 @@ namespace FocusGuard
             target = "all";
             startedAt = 0;
             expiresAt = 0;
+        }
+    }
+
+    /// <summary>手動のブロック。PC とスマホで別々に持つ（片方を始めても、もう片方は変わらない）</summary>
+    public class ManualSessions
+    {
+        public ManualSession pc { get; set; }
+        public ManualSession android { get; set; }
+
+        public ManualSessions()
+        {
+            pc = new ManualSession { target = "pc" };
+            android = new ManualSession { target = "android" };
         }
     }
 
@@ -132,7 +147,9 @@ namespace FocusGuard
     {
         public int version { get; set; }
         public long updatedAt { get; set; }
+        /// <summary>古い版との互換用（読み込み時に manualSessions へ移す）</summary>
         public ManualSession manualSession { get; set; }
+        public ManualSessions manualSessions { get; set; }
         public List<ScheduleRule> schedules { get; set; }
         public BrowserTargets browsers { get; set; }
         public int lv1WaitSeconds { get; set; }
@@ -147,6 +164,7 @@ namespace FocusGuard
             version = 1;
             updatedAt = TimeUtil.NowMs();
             manualSession = new ManualSession();
+            manualSessions = new ManualSessions();
             schedules = new List<ScheduleRule>
             {
                 new ScheduleRule
@@ -175,6 +193,19 @@ namespace FocusGuard
             if (manualSession == null) manualSession = new ManualSession();
             if (string.IsNullOrEmpty(manualSession.target)) manualSession.target = "all";
             if (manualSession.level < 1 || manualSession.level > 3) manualSession.level = 2;
+            if (manualSessions == null) manualSessions = new ManualSessions();
+            if (manualSessions.pc == null) manualSessions.pc = new ManualSession { target = "pc" };
+            if (manualSessions.android == null) manualSessions.android = new ManualSession { target = "android" };
+            manualSessions.pc.target = "pc";
+            manualSessions.android.target = "android";
+            // 古い版が書いた「1枠」の手動ブロックを、対象の端末の枠へ移す
+            if (manualSession.active)
+            {
+                foreach (var dev in new[] { "pc", "android" })
+                    if (RuleEngine.TargetMatches(manualSession.target, dev))
+                        SetSession(dev, manualSession.level, manualSession.startedAt, manualSession.expiresAt);
+                manualSession.active = false;
+            }
             if (schedules == null) schedules = new List<ScheduleRule>();
             foreach (var s in schedules)
             {
@@ -195,6 +226,56 @@ namespace FocusGuard
             if (devices.pc == null) devices.pc = new DeviceHeartbeat();
             if (devices.android == null) devices.android = new DeviceHeartbeat();
             allowedSites = SiteAllowlist.NormalizeList(allowedSites);
+        }
+
+        /// <summary>端末の手動ブロック（null にならない）</summary>
+        public ManualSession SessionFor(string device)
+        {
+            if (manualSessions == null) manualSessions = new ManualSessions();
+            if (device == "pc")
+            {
+                if (manualSessions.pc == null) manualSessions.pc = new ManualSession { target = "pc" };
+                return manualSessions.pc;
+            }
+            if (manualSessions.android == null) manualSessions.android = new ManualSession { target = "android" };
+            return manualSessions.android;
+        }
+
+        public void SetSession(string device, int level, long startedAt, long expiresAt)
+        {
+            if (manualSessions == null) manualSessions = new ManualSessions();
+            var s = new ManualSession { active = true, level = level, target = device, startedAt = startedAt, expiresAt = expiresAt };
+            if (device == "pc") manualSessions.pc = s; else manualSessions.android = s;
+        }
+
+        /// <summary>手動ブロックを始める。target が all なら両方、pc / android ならその端末だけ</summary>
+        public void StartManual(int level, string target, long startedAt, long expiresAt)
+        {
+            foreach (var dev in new[] { "pc", "android" })
+                if (RuleEngine.TargetMatches(target, dev))
+                    SetSession(dev, level, startedAt, expiresAt);
+        }
+
+        public static bool IsLive(ManualSession s, long nowMs)
+        {
+            return s != null && s.active && (s.expiresAt <= 0 || s.expiresAt > nowMs);
+        }
+
+        /// <summary>期限切れの手動ブロックを止める。変わったら true</summary>
+        public bool ExpireManual(long nowMs)
+        {
+            bool changed = false;
+            foreach (var dev in new[] { "pc", "android" })
+            {
+                var s = SessionFor(dev);
+                if (s.active && s.expiresAt > 0 && s.expiresAt <= nowMs) { s.active = false; changed = true; }
+            }
+            if (manualSession != null && manualSession.active && manualSession.expiresAt > 0 && manualSession.expiresAt <= nowMs)
+            {
+                manualSession.active = false;
+                changed = true;
+            }
+            return changed;
         }
     }
 

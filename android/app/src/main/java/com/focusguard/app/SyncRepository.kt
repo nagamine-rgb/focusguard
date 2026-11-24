@@ -97,9 +97,7 @@ class SyncRepository private constructor(context: Context) {
         if (blockErr != null) {
             return Pair(false, blockErr)
         }
-        if (next.manualSession.active && next.manualSession.expiresAt > 0L && next.manualSession.expiresAt <= System.currentTimeMillis()) {
-            next.manualSession.active = false
-        }
+        next.expireManual(System.currentTimeMillis())
         next.updatedAt = System.currentTimeMillis()
         saveLocalState(next)
         return pushToSupabase(next)
@@ -132,8 +130,7 @@ class SyncRepository private constructor(context: Context) {
 
         // Expire manual session locally if already past expiresAt
         val curLocal = getState()
-        if (curLocal.manualSession.active && curLocal.manualSession.expiresAt > 0L && curLocal.manualSession.expiresAt <= System.currentTimeMillis()) {
-            curLocal.manualSession.active = false
+        if (curLocal.expireManual(System.currentTimeMillis())) {
             curLocal.updatedAt = System.currentTimeMillis()
             saveLocalState(curLocal)
             pushToSupabase(curLocal)

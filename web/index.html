@@ -467,6 +467,10 @@
         version: 1,
         updatedAt: Date.now(),
         manualSession: { active: false, level: 2, target: "all", startedAt: 0, expiresAt: 0 },
+        manualSessions: {
+          pc: { active: false, level: 2, target: "pc", startedAt: 0, expiresAt: 0 },
+          android: { active: false, level: 2, target: "android", startedAt: 0, expiresAt: 0 }
+        },
         schedules: [],
         browsers: {
           windows: ["chrome", "msedge", "firefox", "brave", "opera", "vivaldi", "arc"],
@@ -584,9 +588,13 @@
 
       const targetMatch = (t) => !t || t === "all" || t === device;
 
-      const ms = state.manualSession;
-      if (ms && ms.active && targetMatch(ms.target) && (!ms.expiresAt || ms.expiresAt > nowMs)) {
-        best = { active: true, level: ms.level || 2, reason: "手動集中モード", endsAt: ms.expiresAt || null };
+      // 手動ブロック（端末ごと）。古い版の「1枠」が残っていればそれも見る
+      const sessions = [state.manualSessions?.[device]];
+      if (state.manualSession && targetMatch(state.manualSession.target)) sessions.push(state.manualSession);
+      for (const ms of sessions) {
+        if (isLiveSession(ms, nowMs) && (ms.level || 2) > best.level) {
+          best = { active: true, level: ms.level || 2, reason: "手動集中モード", endsAt: ms.expiresAt || null };
+        }
       }
 
       for (const r of (state.schedules || [])) {
@@ -664,6 +672,32 @@
     function addedAnySite(cur, next) {
       const a = new Set(normalizeSites(cur?.allowedSites));
       return normalizeSites(next?.allowedSites).some(x => !a.has(x));
+    }
+
+    // ===== 手動ブロック: PC とスマホで別々に持つ =====
+    function isLiveSession(ms, nowMs = Date.now()) {
+      return !!(ms && ms.active && (!ms.expiresAt || ms.expiresAt > nowMs));
+    }
+    // 古い版が書いた「1枠」の手動ブロックを、端末ごとの枠へ移す
+    function normalizeState(st) {
+      if (!st) return st;
+      st.manualSessions = st.manualSessions || {};
+      for (const dev of ["pc", "android"]) {
+        st.manualSessions[dev] = Object.assign({ active: false, level: 2, startedAt: 0, expiresAt: 0 }, st.manualSessions[dev] || {}, { target: dev });
+      }
+      const legacy = st.manualSession;
+      if (legacy && legacy.active) {
+        for (const dev of ["pc", "android"]) {
+          if (!legacy.target || legacy.target === "all" || legacy.target === dev) {
+            st.manualSessions[dev] = { active: true, level: legacy.level || 2, target: dev, startedAt: legacy.startedAt || 0, expiresAt: legacy.expiresAt || 0 };
+          }
+        }
+        legacy.active = false;
+      }
+      return st;
+    }
+    function targetDevices(target) {
+      return target === "pc" ? ["pc"] : target === "android" ? ["android"] : ["pc", "android"];
     }
 
     function removedAnyTarget(cur, next, dev) {
@@ -884,7 +918,7 @@
           const res = await fetch("/api/state");
           if (!res.ok) throw new Error("HTTP " + res.status);
           const data = await res.json();
-          currentState = data.state || defaultState();
+          currentState = normalizeState(data.state || defaultState());
           document.getElementById("lastSyncText").textContent = data.syncMessage || "ローカル同期済み";
         } else {
           if (!cfg.url || !cfg.key || !cfg.sync) {
@@ -903,7 +937,7 @@
           });
           if (!res.ok) throw new Error("Supabase HTTP " + res.status);
           const data = await res.json();
-          if (data && data.state) currentState = data.state;
+          if (data && data.state) currentState = normalizeState(data.state);
           document.getElementById("lastSyncText").textContent = "PCとスマホ、" + new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }) + "に同期";
         }
         renderAll();
@@ -931,7 +965,7 @@
           });
           const data = await res.json();
           if (!res.ok || !data.ok) throw new Error(data.error || "更新失敗");
-          currentState = data.state || nextState;
+          currentState = normalizeState(data.state || nextState);
         } else {
           if (!cfg.url || !cfg.key || !cfg.sync) {
             showAlert("先に右上の設定から Supabase の接続を保存してください。", "err");
@@ -1075,14 +1109,16 @@
       renderDial(currentState, top);
 
       const btnStop = document.getElementById("btnStop");
-      const ms = currentState.manualSession || {};
-      const manualOn = ms.active && (!ms.expiresAt || ms.expiresAt > Date.now());
-      btnStop.disabled = isHardLocked || !manualOn;
-      if (isHardLocked) {
+      const pcStoppable = isLiveSession(currentState.manualSessions?.pc) && !(pc.active && pc.level >= 3);
+      const anStoppable = isLiveSession(currentState.manualSessions?.android) && !(andr.active && andr.level >= 3);
+      const manualOn = pcStoppable || anStoppable;
+      btnStop.disabled = !manualOn;
+      if (isHardLocked && !manualOn) {
         const lockEnd = Math.max(pc.level >= 3 && pc.endsAt ? pc.endsAt : 0, andr.level >= 3 && andr.endsAt ? andr.endsAt : 0);
         btnStop.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>ブロックを止める（${lockEnd ? fmtClock(lockEnd) + " から" : "ロック中"}）`;
       } else {
-        btnStop.textContent = manualOn ? "手動のブロックを止める" : "手動のブロックはありません";
+        const which = pcStoppable && anStoppable ? "" : pcStoppable ? "PC の" : "スマホの";
+        btnStop.textContent = manualOn ? `${which}手動のブロックを止める` : "手動のブロックはありません";
       }
 
       // スケジュール
@@ -1151,16 +1187,14 @@
       const ends = [pc, an].filter(d => d.active && d.level >= 3).map(d => d.endsAt || 0);
       if (ends.length === 0) return;
       if (ends.some(e => e === 0)) { showAlert("手動で止めるまで続くブロックなので、延ばす必要はありません。", "ok"); return; }
-      const base = Math.max(...ends, Date.now());
-      const targets = new Set([pc.active && pc.level >= 3 ? "pc" : null, an.active && an.level >= 3 ? "android" : null].filter(Boolean));
-      const next = JSON.parse(JSON.stringify(currentState));
-      next.manualSession = {
-        active: true,
-        level: 3,
-        target: targets.size === 2 ? "all" : [...targets][0],
-        startedAt: Date.now(),
-        expiresAt: base + mins * 60 * 1000
-      };
+      // ロック中の端末それぞれの終了時刻から延ばす（ロックしていない端末は変えない）
+      const next = normalizeState(JSON.parse(JSON.stringify(currentState)));
+      const now = Date.now();
+      for (const [dev, ev] of [["pc", pc], ["android", an]]) {
+        if (ev.active && ev.level >= 3) {
+          next.manualSessions[dev] = { active: true, level: 3, target: dev, startedAt: now, expiresAt: Math.max(now, ev.endsAt) + mins * 60 * 1000 };
+        }
+      }
       await pushState(next);
     }
 
@@ -1211,34 +1245,34 @@
       const target = selectedTarget;
       let mins = selectedDuration;
       if (selectedLevel === 3 && mins === 0) mins = 60;
-      const next = JSON.parse(JSON.stringify(currentState));
+      const next = normalizeState(JSON.parse(JSON.stringify(currentState)));
       const now = Date.now();
-      next.manualSession = {
-        active: true,
-        level: selectedLevel,
-        target,
-        startedAt: now,
-        expiresAt: mins > 0 ? now + mins * 60 * 1000 : 0
-      };
+      // 選んだ端末の枠だけを書き換える（もう片方の端末のブロックはそのまま）
+      for (const dev of targetDevices(target)) {
+        next.manualSessions[dev] = { active: true, level: selectedLevel, target: dev, startedAt: now, expiresAt: mins > 0 ? now + mins * 60 * 1000 : 0 };
+      }
       await pushState(next);
     }
 
     async function stopManual() {
       const pc = evaluateDevice(currentState, "pc");
       const an = evaluateDevice(currentState, "android");
-      if ((pc.active && pc.level >= 3) || (an.active && an.level >= 3)) {
-        showAlert("Lv.3 ハードブロック中のため、終了時刻まで停止できません。", "err");
+      // 止められるのは、手動ブロック中で Lv.3 のロックがかかっていない端末だけ
+      const stopPc = isLiveSession(currentState.manualSessions?.pc) && !(pc.active && pc.level >= 3);
+      const stopAn = isLiveSession(currentState.manualSessions?.android) && !(an.active && an.level >= 3);
+      if (!stopPc && !stopAn) {
+        showAlert((pc.level >= 3 || an.level >= 3) ? "Lv.3 のブロック中は、終わる時刻まで止められません。" : "止められる手動のブロックはありません。", "err");
         return;
       }
-      const needsLv2 = (pc.active && pc.level === 2) || (an.active && an.level === 2);
+      const needsLv2 = (stopPc && pc.level === 2) || (stopAn && an.level === 2);
       let passed = false;
       if (needsLv2) {
-        passed = await promptLv2Challenge("Lv.2 ブロックを停止します。");
+        passed = await promptLv2Challenge("Lv.2 のブロックを止めます。");
         if (!passed) return;
       }
-      const next = JSON.parse(JSON.stringify(currentState));
-      next.manualSession.active = false;
-      next.manualSession.expiresAt = 0;
+      const next = normalizeState(JSON.parse(JSON.stringify(currentState)));
+      if (stopPc) Object.assign(next.manualSessions.pc, { active: false, expiresAt: 0 });
+      if (stopAn) Object.assign(next.manualSessions.android, { active: false, expiresAt: 0 });
       await pushState(next, passed);
     }
 

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 
 namespace FocusGuard
@@ -33,16 +34,18 @@ namespace FocusGuard
             string bestReason = "待機中";
             long? bestEndsAt = null;
 
-            // 1. Check manual session
-            if (state.manualSession != null && state.manualSession.active)
+            // 1. 手動ブロック（端末ごと）。古い版の「1枠」が残っていればそれも見る
+            var sessions = new List<ManualSession>();
+            if (state.manualSessions != null)
+                sessions.Add(deviceType == "pc" ? state.manualSessions.pc : state.manualSessions.android);
+            if (state.manualSession != null && TargetMatches(state.manualSession.target, deviceType))
+                sessions.Add(state.manualSession);
+            foreach (var ms in sessions)
             {
-                bool notExpired = state.manualSession.expiresAt <= 0 || state.manualSession.expiresAt > nowMs;
-                if (notExpired && TargetMatches(state.manualSession.target, deviceType))
-                {
-                    bestLevel = state.manualSession.level;
-                    bestReason = "手動集中モード";
-                    bestEndsAt = state.manualSession.expiresAt > 0 ? (long?)state.manualSession.expiresAt : null;
-                }
+                if (!GuardState.IsLive(ms, nowMs) || ms.level <= bestLevel) continue;
+                bestLevel = ms.level;
+                bestReason = "手動集中モード";
+                bestEndsAt = ms.expiresAt > 0 ? (long?)ms.expiresAt : null;
             }
 
             // 2. Check schedule rules (supports overnight ranges like 22:00 - 07:00)
