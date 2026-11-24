@@ -1,14 +1,18 @@
 <resources>
-    <style name="Theme.FocusGuard" parent="Theme.MaterialComponents.NoActionBar">
-        <item name="colorPrimary">#3B82F6</item>
-        <item name="colorPrimaryVariant">#2563EB</item>
-        <item name="colorOnPrimary">#FFFFFF</item>
-        <item name="android:windowBackground">#0D1119</item>
-        <item name="android:statusBarColor">#0D1119</item>
-        <item name="android:navigationBarColor">#0D1119</item>
+    <style name="Theme.FocusGuard" parent="Theme.MaterialComponents.Light.NoActionBar">
+        <item name="colorPrimary">#1C2620</item>
+        <item name="colorPrimaryVariant">#1C2620</item>
+        <item name="colorOnPrimary">#F3F5F1</item>
+        <item name="colorAccent">#1C2620</item>
+        <item name="android:windowBackground">#E4E8E1</item>
+        <item name="android:statusBarColor">#E4E8E1</item>
+        <item name="android:navigationBarColor">#E4E8E1</item>
+        <item name="android:windowLightStatusBar">true</item>
     </style>
 
     <style name="Theme.FocusGuard.Fullscreen" parent="Theme.FocusGuard">
         <item name="android:windowFullscreen">true</item>
+        <item name="android:windowBackground">#23302A</item>
+        <item name="android:windowLightStatusBar">false</item>
     </style>
 </resources>
