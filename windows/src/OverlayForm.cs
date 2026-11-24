@@ -40,7 +40,7 @@ namespace FocusGuard
             Bounds = SystemInformation.VirtualScreen;
             TopMost = true;
             ShowInTaskbar = false;
-            BackColor = Color.FromArgb(14, 17, 23);
+            BackColor = Color.FromArgb(35, 48, 42);
             Opacity = 0.96;
             KeyPreview = true;
 
@@ -79,11 +79,11 @@ namespace FocusGuard
             {
                 Size = new Size(cardW, cardH),
                 Location = new Point(cardX, cardY),
-                BackColor = Color.FromArgb(24, 29, 39)
+                BackColor = Color.FromArgb(44, 59, 51)
             };
             card.Paint += (s, e) =>
             {
-                Color accent = level == 1 ? Color.FromArgb(245, 185, 66) : Color.FromArgb(245, 118, 66);
+                Color accent = level == 1 ? Color.FromArgb(217, 162, 27) : Color.FromArgb(224, 122, 69);
                 using (var pen = new Pen(accent, 2))
                 {
                     e.Graphics.DrawRectangle(pen, 1, 1, card.Width - 3, card.Height - 3);
@@ -91,12 +91,12 @@ namespace FocusGuard
             };
             Controls.Add(card);
 
-            Color badgeBg = level == 1 ? Color.FromArgb(72, 56, 20) : Color.FromArgb(80, 36, 20);
+            Color badgeBg = level == 1 ? Color.FromArgb(61, 52, 24) : Color.FromArgb(72, 44, 30);
             Color badgeFg = level == 1 ? Color.FromArgb(255, 210, 102) : Color.FromArgb(255, 150, 102);
 
             var lblBadge = new Label
             {
-                Text = level == 1 ? "  Lv.1  気づきモード（ソフト）  " : "  Lv.2  ひと手間モード（ミドル）  ",
+                Text = level == 1 ? "  Lv.1  気づき  " : "  Lv.2  ひと手間  ",
                 Font = new Font("Meiryo UI", 10f, FontStyle.Bold),
                 ForeColor = badgeFg,
                 BackColor = badgeBg,
@@ -109,10 +109,10 @@ namespace FocusGuard
             var lblTitle = new Label
             {
                 Text = level == 1
-                    ? "ちょっと待って。本当に今このアプリが必要？"
-                    : "集中モード中です。対象アプリの起動をブロックしました。",
-                Font = new Font("Meiryo UI", 14.5f, FontStyle.Bold),
-                ForeColor = Color.White,
+                    ? "開く前に、ひと呼吸おきましょう。"
+                    : "集中時間のあいだ、このアプリを止めています。",
+                Font = new Font("Yu Mincho", 16f, FontStyle.Bold),
+                ForeColor = Color.FromArgb(233, 238, 230),
                 Location = new Point(32, 68),
                 Size = new Size(cardW - 64, 56)
             };
@@ -120,9 +120,9 @@ namespace FocusGuard
 
             var lblMeta = new Label
             {
-                Text = string.Format("理由: {0}  /  残り: {1}\r\n検知アプリ: {2}", reason, remainingText, browserNames),
+                Text = string.Format("{0}　残り {1}\r\n止めたアプリ: {2}", reason, remainingText, browserNames),
                 Font = new Font("Meiryo UI", 9.5f),
-                ForeColor = Color.FromArgb(156, 168, 190),
+                ForeColor = Color.FromArgb(181, 194, 184),
                 Location = new Point(32, 128),
                 Size = new Size(cardW - 64, 42)
             };
@@ -140,10 +140,10 @@ namespace FocusGuard
             // Primary action: close target app (recommended)
             var btnClose = new Button
             {
-                Text = "やっぱりやめる（アプリを閉じる）",
+                Text = "やめて閉じる",
                 Font = new Font("Meiryo UI", 11f, FontStyle.Bold),
-                ForeColor = Color.White,
-                BackColor = Color.FromArgb(37, 150, 96),
+                ForeColor = Color.FromArgb(28, 38, 32),
+                BackColor = Color.FromArgb(233, 238, 230),
                 FlatStyle = FlatStyle.Flat,
                 Size = new Size(cardW - 64, 46),
                 Location = new Point(32, cardH - 122),
@@ -163,7 +163,7 @@ namespace FocusGuard
         {
             _lblCountdown = new Label
             {
-                Text = string.Format("深呼吸して {0} 秒待ってください...", _remainingWaitSec),
+                Text = string.Format("ゆっくり息を吸って、吐いて。あと {0} 秒", _remainingWaitSec),
                 Font = new Font("Meiryo UI", 12f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(255, 210, 102),
                 Location = new Point(32, 185),
@@ -185,10 +185,10 @@ namespace FocusGuard
 
             _btnAllow = new Button
             {
-                Text = string.Format("あと {0} 秒で一時許可可能（{1}分間）", _remainingWaitSec, _allowMinutes),
+                Text = string.Format("あと {0} 秒で、{1}分だけ開けられます", _remainingWaitSec, _allowMinutes),
                 Font = new Font("Meiryo UI", 9.5f),
-                ForeColor = Color.FromArgb(180, 190, 208),
-                BackColor = Color.FromArgb(40, 48, 62),
+                ForeColor = Color.FromArgb(181, 194, 184),
+                BackColor = Color.FromArgb(44, 59, 51),
                 FlatStyle = FlatStyle.Flat,
                 Enabled = false,
                 Size = new Size(cardW - 64, 38),
@@ -196,7 +196,7 @@ namespace FocusGuard
                 Cursor = Cursors.Hand
             };
             _btnAllow.FlatAppearance.BorderSize = 1;
-            _btnAllow.FlatAppearance.BorderColor = Color.FromArgb(70, 82, 102);
+            _btnAllow.FlatAppearance.BorderColor = Color.FromArgb(75, 95, 83);
             _btnAllow.Click += (s, e) =>
             {
                 _allowClose = true;
@@ -215,16 +215,16 @@ namespace FocusGuard
                 if (_remainingWaitSec <= 0)
                 {
                     _countdownTimer.Stop();
-                    _lblCountdown.Text = "準備OK。本当に必要な用事だけ済ませましょう。";
-                    _lblCountdown.ForeColor = Color.FromArgb(130, 220, 170);
+                    _lblCountdown.Text = "開けられます。必要な用事だけ済ませましょう。";
+                    _lblCountdown.ForeColor = Color.FromArgb(150, 214, 172);
                     _btnAllow.Enabled = true;
-                    _btnAllow.Text = string.Format("{0}分だけアプリを許可する", _allowMinutes);
+                    _btnAllow.Text = string.Format("{0}分だけ開ける", _allowMinutes);
                     _btnAllow.ForeColor = Color.White;
                 }
                 else
                 {
-                    _lblCountdown.Text = string.Format("深呼吸して {0} 秒待ってください...", _remainingWaitSec);
-                    _btnAllow.Text = string.Format("あと {0} 秒で一時許可可能（{1}分間）", _remainingWaitSec, _allowMinutes);
+                    _lblCountdown.Text = string.Format("ゆっくり息を吸って、吐いて。あと {0} 秒", _remainingWaitSec);
+                    _btnAllow.Text = string.Format("あと {0} 秒で、{1}分だけ開けられます", _remainingWaitSec, _allowMinutes);
                 }
             };
             _countdownTimer.Start();
@@ -238,7 +238,7 @@ namespace FocusGuard
             {
                 Text = "どうしても今使うなら、下の言葉を手で入力してください（貼り付けはできません）:",
                 Font = new Font("Meiryo UI", 9.5f),
-                ForeColor = Color.FromArgb(220, 226, 238),
+                ForeColor = Color.FromArgb(233, 238, 230),
                 Location = new Point(32, 180),
                 Size = new Size(cardW - 64, 24)
             };
@@ -248,8 +248,8 @@ namespace FocusGuard
             {
                 Text = _targetQuote.Text,
                 Font = new Font("Meiryo UI", 13f, FontStyle.Bold),
-                ForeColor = Color.FromArgb(255, 190, 140),
-                BackColor = Color.FromArgb(16, 20, 28),
+                ForeColor = Color.FromArgb(233, 238, 230),
+                BackColor = Color.FromArgb(29, 40, 35),
                 TextAlign = ContentAlignment.MiddleLeft,
                 Padding = new Padding(12, 6, 12, 6),
                 Location = new Point(32, 208),
@@ -261,7 +261,7 @@ namespace FocusGuard
             {
                 Text = "— " + _targetQuote.Author,
                 Font = new Font("Meiryo UI", 9f),
-                ForeColor = Color.FromArgb(156, 168, 190),
+                ForeColor = Color.FromArgb(181, 194, 184),
                 TextAlign = ContentAlignment.MiddleRight,
                 Location = new Point(32, 306),
                 Size = new Size(cardW - 64, 22)
@@ -271,7 +271,7 @@ namespace FocusGuard
             _txtPhrase = new TextBox
             {
                 Font = new Font("Meiryo UI", 12f),
-                BackColor = Color.FromArgb(32, 38, 52),
+                BackColor = Color.FromArgb(29, 40, 35),
                 ForeColor = Color.White,
                 BorderStyle = BorderStyle.FixedSingle,
                 Location = new Point(32, 334),
@@ -290,9 +290,9 @@ namespace FocusGuard
             {
                 bool match = Quotes.Matches(_txtPhrase.Text, _targetQuote);
                 _btnAllow.Enabled = match;
-                _btnAllow.ForeColor = match ? Color.White : Color.FromArgb(150, 160, 180);
+                _btnAllow.ForeColor = match ? Color.White : Color.FromArgb(181, 194, 184);
                 _lblPhraseHint.Text = Quotes.Progress(_txtPhrase.Text, _targetQuote);
-                _lblPhraseHint.ForeColor = match ? Color.FromArgb(110, 220, 150) : Color.FromArgb(140, 150, 170);
+                _lblPhraseHint.ForeColor = match ? Color.FromArgb(150, 214, 172) : Color.FromArgb(181, 194, 184);
             };
             card.Controls.Add(_txtPhrase);
 
@@ -300,7 +300,7 @@ namespace FocusGuard
             {
                 Text = Quotes.Progress("", _targetQuote),
                 Font = new Font("Meiryo UI", 8.5f),
-                ForeColor = Color.FromArgb(140, 150, 170),
+                ForeColor = Color.FromArgb(181, 194, 184),
                 Location = new Point(32, 370),
                 Size = new Size(cardW - 64, 20)
             };
@@ -308,10 +308,10 @@ namespace FocusGuard
 
             _btnAllow = new Button
             {
-                Text = string.Format("入力が一致したら {0}分だけ許可する", _allowMinutes),
+                Text = string.Format("入力が一致したら {0}分だけ開ける", _allowMinutes),
                 Font = new Font("Meiryo UI", 9.5f),
-                ForeColor = Color.FromArgb(150, 160, 180),
-                BackColor = Color.FromArgb(40, 48, 62),
+                ForeColor = Color.FromArgb(181, 194, 184),
+                BackColor = Color.FromArgb(44, 59, 51),
                 FlatStyle = FlatStyle.Flat,
                 Enabled = false,
                 Size = new Size(cardW - 64, 38),
@@ -319,7 +319,7 @@ namespace FocusGuard
                 Cursor = Cursors.Hand
             };
             _btnAllow.FlatAppearance.BorderSize = 1;
-            _btnAllow.FlatAppearance.BorderColor = Color.FromArgb(70, 82, 102);
+            _btnAllow.FlatAppearance.BorderColor = Color.FromArgb(75, 95, 83);
             _btnAllow.Click += (s, e) =>
             {
                 _allowClose = true;
