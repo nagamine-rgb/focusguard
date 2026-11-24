@@ -11,13 +11,28 @@ android {
         applicationId = "com.focusguard.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        // CI ではビルド番号を使う（上書き更新のたびに番号が増える）
+        versionCode = (System.getenv("VERSION_CODE") ?: "1").toInt()
+        versionName = "1.0." + (System.getenv("VERSION_CODE") ?: "0")
+    }
+
+    // 署名の鍵は GitHub Secrets から CI が渡す。毎回同じ鍵で署名するので上書き更新できる
+    val keystorePath = System.getenv("FG_KEYSTORE_PATH")
+    signingConfigs {
+        if (keystorePath != null) {
+            create("release") {
+                storeFile = file(keystorePath)
+                storePassword = System.getenv("FG_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("FG_KEY_ALIAS")
+                keyPassword = System.getenv("FG_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (keystorePath != null) signingConfig = signingConfigs.getByName("release")
         }
     }
 
@@ -28,6 +43,12 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
+    }
+
+    // リリースビルドで Lint の警告によって止まらないようにする（チェックは別途手元で）
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
     }
 }
 

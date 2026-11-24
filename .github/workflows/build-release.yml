@@ -63,12 +63,36 @@ jobs:
         with:
           gradle-version: "8.7"
 
-      - name: Build Debug APK
+      # 毎回同じ鍵で署名しないと、スマホで上書き更新できない（「既存のパッケージと競合」になる）。
+      # 鍵は Secrets: ANDROID_KEYSTORE_BASE64 / ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD
+      - name: Build signed release APK
         working-directory: android
-        run: gradle assembleDebug --no-daemon
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          FG_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          FG_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          FG_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          VERSION_CODE: ${{ github.run_number }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            export FG_KEYSTORE_PATH="$RUNNER_TEMP/release.jks"
+            gradle assembleRelease --no-daemon
+            cp app/build/outputs/apk/release/app-release.apk ../FocusGuard.apk
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "::warning::署名の鍵が Secrets にないため、確認用にデバッグ版をビルドします（リリースには使いません）"
+            gradle assembleDebug --no-daemon
+            cp app/build/outputs/apk/debug/app-debug.apk ../FocusGuard.apk
+          else
+            echo "::error::署名の鍵が Secrets にありません。README の「Android の署名」を見て ANDROID_KEYSTORE_BASE64 などを登録してください"
+            exit 1
+          fi
 
-      - name: Rename APK
-        run: cp android/app/build/outputs/apk/debug/app-debug.apk FocusGuard.apk
+      - name: Check APK signature
+        if: ${{ github.event_name != 'pull_request' }}
+        run: |
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$APKSIGNER" verify --print-certs FocusGuard.apk | grep -i "SHA-256"
 
       - name: Upload Android Artifact
         uses: actions/upload-artifact@v4
