@@ -109,17 +109,39 @@ object RuleEngine {
         }
     }
 
-    fun wouldWeakenHardLock(current: GuardState, proposed: GuardState): Boolean {
+    fun validateTransition(current: GuardState, proposed: GuardState, lv2ChallengePassed: Boolean = false): String? {
         for (dev in listOf("pc", "android")) {
             val cur = evaluate(current, dev, 0L)
+            val next = evaluate(proposed, dev, 0L)
             if (cur.isHardLocked) {
-                val next = evaluate(proposed, dev, 0L)
-                if (!next.isHardLocked) return true
-                if (cur.endsAtMs != null && next.endsAtMs != null && next.endsAtMs + 5000L < cur.endsAtMs) {
-                    return true
+                if (!next.isHardLocked) {
+                    return "Lv.3 ハードブロック中のため、終了時刻まで解除またはレベル引き下げはできません。"
+                }
+                if (isShortened(cur.endsAtMs, next.endsAtMs)) {
+                    return "Lv.3 ハードブロック中のため、残り時間を短縮することはできません。"
+                }
+            } else if (cur.isActive && cur.level == 2 && !lv2ChallengePassed) {
+                if (!next.isActive) {
+                    return "Lv.2 ブロックを停止するには確認フレーズの入力が必要です。"
+                }
+                if (next.level < 2) {
+                    return "Lv.2 稼働中は Lv.1 へ引き下げできません（解除するには「停止」から確認フレーズを入力してください）。"
+                }
+                if (next.level == 2 && isShortened(cur.endsAtMs, next.endsAtMs)) {
+                    return "Lv.2 稼働中は残り時間を短縮できません（延長や Lv.3 への強化は可能です）。"
                 }
             }
         }
+        return null
+    }
+
+    private fun isShortened(curEndsAt: Long?, nextEndsAt: Long?): Boolean {
+        if (curEndsAt == null && nextEndsAt != null) return true
+        if (curEndsAt != null && nextEndsAt != null && nextEndsAt + 5000L < curEndsAt) return true
         return false
+    }
+
+    fun wouldWeakenHardLock(current: GuardState, proposed: GuardState): Boolean {
+        return validateTransition(current, proposed, lv2ChallengePassed = true) != null
     }
 }

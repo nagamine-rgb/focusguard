@@ -116,7 +116,28 @@ namespace FocusGuard
             }
         }
 
-        public bool UpdateState(GuardState nextState, out string errorMessage, bool allowHardLockBypass = false)
+        public static GuardState LoadStateStatic()
+        {
+            try
+            {
+                string asmLoc = typeof(SyncService).Assembly.Location;
+                string exeDir = !string.IsNullOrEmpty(asmLoc)
+                    ? Path.GetDirectoryName(asmLoc)
+                    : AppDomain.CurrentDomain.BaseDirectory;
+                string dataDir = ResolveDataDir(exeDir);
+                string path = Path.Combine(dataDir, "state.json");
+                if (File.Exists(path))
+                {
+                    string json = File.ReadAllText(path, Encoding.UTF8);
+                    var st = JsonUtil.Deserialize<GuardState>(json);
+                    if (st != null) { st.EnsureDefaults(); return st; }
+                }
+            }
+            catch { }
+            return new GuardState();
+        }
+
+        public bool UpdateState(GuardState nextState, out string errorMessage, bool lv2ChallengePassed = false)
         {
             errorMessage = null;
             if (nextState == null)
@@ -128,9 +149,10 @@ namespace FocusGuard
 
             lock (_lock)
             {
-                if (!allowHardLockBypass && RuleEngine.WouldWeakenHardLock(_state, nextState))
+                string blockErr = RuleEngine.ValidateTransition(_state, nextState, lv2ChallengePassed);
+                if (blockErr != null)
                 {
-                    errorMessage = "Lv.3 ハードブロック中のため、終了時刻まで解除またはレベル引き下げはできません。";
+                    errorMessage = blockErr;
                     return false;
                 }
 
@@ -548,9 +570,10 @@ namespace FocusGuard
 
                         if (path == "/api/state" && method == "POST")
                         {
+                            bool lv2Verified = rawPath.IndexOf("lv2verified=1", StringComparison.OrdinalIgnoreCase) >= 0;
                             var nextState = JsonUtil.Deserialize<GuardState>(body);
                             string err;
-                            if (!UpdateState(nextState, out err))
+                            if (!UpdateState(nextState, out err, lv2Verified))
                             {
                                 await WriteHttpResponseAsync(stream, 403, "Forbidden", "application/json; charset=utf-8",
                                     JsonUtil.Serialize(new Dictionary<string, object> { { "ok", false }, { "error", err } }));

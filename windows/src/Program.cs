@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Drawing;
 using System.Linq;
 using System.Net;
@@ -18,12 +19,24 @@ namespace FocusGuard
         [STAThread]
         static void Main(string[] args)
         {
+            // Watchdog mode: silently protects FocusGuard during Lv.3 Hard Lock
+            if (args.Length >= 1 && string.Equals(args[0], "--watchdog", StringComparison.OrdinalIgnoreCase))
+            {
+                int parentPid = 0;
+                if (args.Length >= 2) int.TryParse(args[1], out parentPid);
+                RunWatchdogLoop(parentPid);
+                return;
+            }
+
             bool createdNew;
             _mutex = new Mutex(true, "Local\\FocusGuard_SingleInstance_Mutex", out createdNew);
             if (!createdNew)
             {
-                MessageBox.Show("FocusGuard はすでに起動しています（タスクトレイを確認してください）。",
-                    "FocusGuard", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                if (!args.Any(a => string.Equals(a, "--minimized", StringComparison.OrdinalIgnoreCase)))
+                {
+                    MessageBox.Show("FocusGuard はすでに起動しています（タスクトレイを確認してください）。",
+                        "FocusGuard", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
                 return;
             }
 
@@ -41,8 +54,88 @@ namespace FocusGuard
                 Application.Run(appContext);
             }
 
-            _mutex.ReleaseMutex();
+            try { _mutex.ReleaseMutex(); } catch { }
             _mutex.Dispose();
+        }
+
+        private static void RunWatchdogLoop(int watchedPid)
+        {
+            bool created;
+            using (var wdMutex = new Mutex(true, "Local\\FocusGuard_Watchdog_Mutex", out created))
+            {
+                if (!created) return;
+
+                string exePath = Application.ExecutablePath;
+                int currentMainPid = watchedPid;
+
+                while (true)
+                {
+                    Thread.Sleep(900);
+
+                    // Check if Lv.3 Hard Lock is still active on PC
+                    GuardState st = SyncService.LoadStateStatic();
+                    EffectiveBlockState eff = RuleEngine.Evaluate(st, "pc", 0);
+                    if (!eff.IsHardLocked)
+                    {
+                        // Lv.3 finished; watchdog exits cleanly
+                        break;
+                    }
+
+                    bool mainAlive = IsProcessAlive(currentMainPid);
+                    if (!mainAlive)
+                    {
+                        // Check if another main instance already started
+                        var existing = FindOtherMainProcessId();
+                        if (existing > 0)
+                        {
+                            currentMainPid = existing;
+                        }
+                        else
+                        {
+                            try
+                            {
+                                var psi = new ProcessStartInfo
+                                {
+                                    FileName = exePath,
+                                    Arguments = "--minimized",
+                                    UseShellExecute = false
+                                };
+                                var restarted = Process.Start(psi);
+                                if (restarted != null) currentMainPid = restarted.Id;
+                            }
+                            catch { }
+                        }
+                    }
+                }
+            }
+        }
+
+        private static bool IsProcessAlive(int pid)
+        {
+            if (pid <= 0) return false;
+            try
+            {
+                var p = Process.GetProcessById(pid);
+                return !p.HasExited;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static int FindOtherMainProcessId()
+        {
+            int myPid = Process.GetCurrentProcess().Id;
+            string myName = Process.GetCurrentProcess().ProcessName;
+            foreach (var p in Process.GetProcessesByName(myName))
+            {
+                if (p.Id != myPid)
+                {
+                    try { if (!p.HasExited) return p.Id; } catch { }
+                }
+            }
+            return 0;
         }
     }
 
@@ -53,6 +146,7 @@ namespace FocusGuard
         private readonly MainForm _mainForm;
         private readonly NotifyIcon _trayIcon;
         private int _lastIconLevel = -1;
+        private Process _watchdogProc;
 
         public FocusGuardTrayContext(bool startMinimized)
         {
@@ -87,11 +181,16 @@ namespace FocusGuard
             }
         }
 
-        private void OnMonitorTick(EffectiveBlockState eff)
+        private void OnMonitorTick(EffectiveBlockState effPc)
         {
-            _mainForm.UpdateLiveStatus(eff);
+            GuardState st = _sync.GetState();
+            EffectiveBlockState effAndroid = RuleEngine.Evaluate(st, "android", 0);
+            _mainForm.UpdateLiveStatus(effPc, effAndroid, st.devices != null ? st.devices.android : null);
 
-            int visualLevel = !eff.IsActive ? 0 : (eff.IsSnoozed ? 10 : eff.Level);
+            // Manage Lv.3 Watchdog auto-revive process
+            EnsureWatchdogForHardLock(effPc.IsHardLocked);
+
+            int visualLevel = !effPc.IsActive ? 0 : (effPc.IsSnoozed ? 10 : effPc.Level);
             if (visualLevel != _lastIconLevel)
             {
                 _lastIconLevel = visualLevel;
@@ -100,13 +199,44 @@ namespace FocusGuard
                 if (old != null) old.Dispose();
             }
 
-            string tip = !eff.IsActive
+            string tip = !effPc.IsActive
                 ? "FocusGuard — 待機中"
-                : (eff.IsSnoozed
-                    ? string.Format("FocusGuard — 一時許可中 (残り{0}秒)", eff.SnoozeRemainingSeconds)
-                    : string.Format("FocusGuard — Lv.{0} ブロック中", eff.Level));
+                : (effPc.IsSnoozed
+                    ? string.Format("FocusGuard — 一時許可中 (残り{0}秒)", effPc.SnoozeRemainingSeconds)
+                    : string.Format("FocusGuard — Lv.{0} ブロック中", effPc.Level));
             if (tip.Length > 63) tip = tip.Substring(0, 63);
             _trayIcon.Text = tip;
+        }
+
+        private void EnsureWatchdogForHardLock(bool shouldProtect)
+        {
+            try
+            {
+                if (shouldProtect)
+                {
+                    bool alive = _watchdogProc != null && !_watchdogProc.HasExited;
+                    if (!alive)
+                    {
+                        var psi = new ProcessStartInfo
+                        {
+                            FileName = Application.ExecutablePath,
+                            Arguments = "--watchdog " + Process.GetCurrentProcess().Id,
+                            UseShellExecute = false,
+                            CreateNoWindow = true
+                        };
+                        _watchdogProc = Process.Start(psi);
+                    }
+                }
+                else
+                {
+                    if (_watchdogProc != null && !_watchdogProc.HasExited)
+                    {
+                        try { _watchdogProc.Kill(); } catch { }
+                    }
+                    _watchdogProc = null;
+                }
+            }
+            catch { }
         }
 
         private void QuickStart(int level, int minutes)
@@ -143,15 +273,23 @@ namespace FocusGuard
             if (eff.IsHardLocked)
             {
                 MessageBox.Show(
-                    string.Format("Lv.3 ハードブロック中（残り: {0}）のため、トレイからの終了はロックされています。", eff.RemainingText),
+                    string.Format("Lv.3 ハードブロック中（残り: {0}）のため、終了はロックされています。", eff.RemainingText),
                     "FocusGuard ロック中", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
+            }
+            if (eff.IsActive && eff.Level == 2)
+            {
+                if (!FocusGuard.MainForm.PromptLv2Challenge("Lv.2 稼働中に FocusGuard を終了するには確認フレーズを入力してください:"))
+                {
+                    return;
+                }
             }
             ExitApplication();
         }
 
         private void ExitApplication()
         {
+            EnsureWatchdogForHardLock(false);
             _monitor.Stop();
             _monitor.Dispose();
             _sync.Dispose();

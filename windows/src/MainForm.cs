@@ -13,9 +13,11 @@ namespace FocusGuard
         private readonly SyncService _sync;
         private readonly Action _requestQuit;
 
-        // Status header
-        private Label _lblStatusBadge;
-        private Label _lblStatusDetail;
+        // Dual-device Status header
+        private Label _lblPcBadge;
+        private Label _lblPcDetail;
+        private Label _lblAndroidBadge;
+        private Label _lblAndroidDetail;
         private Label _lblSyncStatus;
         private Button _btnEndSnooze;
 
@@ -51,8 +53,18 @@ namespace FocusGuard
 
         private readonly Color _bgDark = Color.FromArgb(18, 22, 30);
         private readonly Color _cardBg = Color.FromArgb(26, 32, 44);
+        private readonly Color _subCardBg = Color.FromArgb(19, 24, 34);
         private readonly Color _textMain = Color.FromArgb(238, 242, 248);
         private readonly Color _textSub = Color.FromArgb(156, 168, 190);
+
+        private static readonly string[] ChallengePhrases = new[]
+        {
+            "confirm stop focus",
+            "choose mindful break",
+            "unlock intentionally",
+            "verify my real need",
+            "pause focus session"
+        };
 
         public MainForm(SyncService sync, Action requestQuit)
         {
@@ -60,8 +72,8 @@ namespace FocusGuard
             _requestQuit = requestQuit;
 
             Text = "FocusGuard — デジタルデトックス リモコン (PC / Android)";
-            Size = new Size(700, 620);
-            MinimumSize = new Size(660, 580);
+            Size = new Size(710, 660);
+            MinimumSize = new Size(680, 620);
             StartPosition = FormStartPosition.CenterScreen;
             BackColor = _bgDark;
             ForeColor = _textMain;
@@ -80,52 +92,179 @@ namespace FocusGuard
             _forceExit = true;
         }
 
-        public void UpdateLiveStatus(EffectiveBlockState eff)
+        public static bool PromptLv2Challenge(string titleMessage)
+        {
+            var rnd = new Random();
+            string phrase = ChallengePhrases[rnd.Next(ChallengePhrases.Length)] + " " + rnd.Next(100, 999);
+
+            using (var dlg = new Form())
+            {
+                dlg.Text = "Lv.2 確認フレーズ入力";
+                dlg.Size = new Size(460, 260);
+                dlg.FormBorderStyle = FormBorderStyle.FixedDialog;
+                dlg.StartPosition = FormStartPosition.CenterParent;
+                dlg.MaximizeBox = false;
+                dlg.MinimizeBox = false;
+                dlg.BackColor = Color.FromArgb(22, 27, 37);
+                dlg.ForeColor = Color.White;
+                dlg.Font = new Font("Meiryo UI", 9.5f);
+
+                var lblMsg = new Label
+                {
+                    Text = titleMessage,
+                    Location = new Point(20, 16),
+                    Size = new Size(404, 38),
+                    ForeColor = Color.FromArgb(225, 232, 245)
+                };
+                var lblPhrase = new Label
+                {
+                    Text = phrase,
+                    Font = new Font("Consolas", 13.5f, FontStyle.Bold),
+                    ForeColor = Color.FromArgb(255, 170, 110),
+                    BackColor = Color.FromArgb(14, 18, 26),
+                    TextAlign = ContentAlignment.MiddleCenter,
+                    Location = new Point(20, 60),
+                    Size = new Size(404, 36)
+                };
+                var txt = new TextBox
+                {
+                    Font = new Font("Consolas", 12f),
+                    BackColor = Color.FromArgb(34, 42, 58),
+                    ForeColor = Color.White,
+                    BorderStyle = BorderStyle.FixedSingle,
+                    Location = new Point(20, 108),
+                    Size = new Size(404, 30),
+                    ShortcutsEnabled = false
+                };
+                txt.KeyDown += (s, e) =>
+                {
+                    if ((e.Control && e.KeyCode == Keys.V) || (e.Shift && e.KeyCode == Keys.Insert))
+                        e.SuppressKeyPress = true;
+                };
+
+                var btnOk = new Button
+                {
+                    Text = "確認して実行",
+                    Enabled = false,
+                    Location = new Point(196, 158),
+                    Size = new Size(126, 36),
+                    BackColor = Color.FromArgb(200, 90, 52),
+                    ForeColor = Color.White,
+                    FlatStyle = FlatStyle.Flat,
+                    DialogResult = DialogResult.OK
+                };
+                btnOk.FlatAppearance.BorderSize = 0;
+
+                var btnCancel = new Button
+                {
+                    Text = "キャンセル",
+                    Location = new Point(332, 158),
+                    Size = new Size(92, 36),
+                    BackColor = Color.FromArgb(56, 66, 84),
+                    ForeColor = Color.White,
+                    FlatStyle = FlatStyle.Flat,
+                    DialogResult = DialogResult.Cancel
+                };
+                btnCancel.FlatAppearance.BorderSize = 0;
+
+                txt.TextChanged += (s, e) =>
+                {
+                    btnOk.Enabled = string.Equals(txt.Text.Trim(), phrase, StringComparison.Ordinal);
+                };
+
+                dlg.Controls.AddRange(new Control[] { lblMsg, lblPhrase, txt, btnOk, btnCancel });
+                dlg.AcceptButton = btnOk;
+                dlg.CancelButton = btnCancel;
+                return dlg.ShowDialog() == DialogResult.OK;
+            }
+        }
+
+        public void UpdateLiveStatus(EffectiveBlockState effPc, EffectiveBlockState effAndroid, DeviceHeartbeat androidHb)
         {
             BeginInvokeSafe(() =>
             {
-                if (!eff.IsActive)
+                // PC Status card
+                if (!effPc.IsActive)
                 {
-                    _lblStatusBadge.Text = "  待機中 (ブロックOFF)  ";
-                    _lblStatusBadge.BackColor = Color.FromArgb(26, 68, 52);
-                    _lblStatusBadge.ForeColor = Color.FromArgb(110, 230, 175);
-                    _lblStatusDetail.Text = "ブラウザは通常どおり利用できます。";
+                    ApplyBadge(_lblPcBadge, "  待機中 (OFF)  ", Color.FromArgb(26, 68, 52), Color.FromArgb(110, 230, 175));
+                    _lblPcDetail.Text = "ブラウザは通常どおり利用できます";
                     _btnEndSnooze.Visible = false;
                 }
-                else if (eff.IsSnoozed)
+                else if (effPc.IsSnoozed)
                 {
-                    _lblStatusBadge.Text = string.Format("  一時許可中 (残り {0} 秒)  ", eff.SnoozeRemainingSeconds);
-                    _lblStatusBadge.BackColor = Color.FromArgb(40, 62, 92);
-                    _lblStatusBadge.ForeColor = Color.FromArgb(145, 200, 255);
-                    _lblStatusDetail.Text = string.Format("元のルール: Lv.{0} ({1})", eff.Level, eff.Reason);
+                    ApplyBadge(_lblPcBadge, string.Format("  一時許可中 (残り {0} 秒)  ", effPc.SnoozeRemainingSeconds), Color.FromArgb(40, 62, 92), Color.FromArgb(145, 200, 255));
+                    _lblPcDetail.Text = string.Format("元ルール: Lv.{0} ({1})", effPc.Level, effPc.Reason);
                     _btnEndSnooze.Visible = true;
                 }
                 else
                 {
-                    _lblStatusBadge.Text = string.Format("  Lv.{0} ブロック稼働中  ", eff.Level);
-                    if (eff.Level == 1)
-                    {
-                        _lblStatusBadge.BackColor = Color.FromArgb(78, 60, 18);
-                        _lblStatusBadge.ForeColor = Color.FromArgb(255, 215, 102);
-                    }
-                    else if (eff.Level == 2)
-                    {
-                        _lblStatusBadge.BackColor = Color.FromArgb(88, 40, 18);
-                        _lblStatusBadge.ForeColor = Color.FromArgb(255, 155, 105);
-                    }
-                    else
-                    {
-                        _lblStatusBadge.BackColor = Color.FromArgb(92, 24, 34);
-                        _lblStatusBadge.ForeColor = Color.FromArgb(255, 125, 138);
-                    }
-                    _lblStatusDetail.Text = string.Format("{0}  |  残り: {1}", eff.Reason, eff.RemainingText);
+                    ApplyLevelBadge(_lblPcBadge, effPc.Level);
+                    _lblPcDetail.Text = string.Format("{0}\r\n残り: {1}", effPc.Reason, effPc.RemainingText);
                     _btnEndSnooze.Visible = false;
                 }
 
-                bool locked = eff.IsHardLocked;
-                _btnStopManual.Enabled = !locked;
-                _lblHardLockNote.Visible = locked;
+                // Android Status card
+                string hbStr = FormatHeartbeat(androidHb);
+                if (!effAndroid.IsActive)
+                {
+                    ApplyBadge(_lblAndroidBadge, "  待機中 (OFF)  ", Color.FromArgb(26, 68, 52), Color.FromArgb(110, 230, 175));
+                    _lblAndroidDetail.Text = "通常利用OK\r\n" + hbStr;
+                }
+                else
+                {
+                    ApplyLevelBadge(_lblAndroidBadge, effAndroid.Level);
+                    _lblAndroidDetail.Text = string.Format("{0} / 残り: {1}\r\n{2}", effAndroid.Reason, effAndroid.RemainingText, hbStr);
+                }
+
+                bool hardLocked = effPc.IsHardLocked || effAndroid.IsHardLocked;
+                bool lv2Active = !hardLocked && ((effPc.IsActive && effPc.Level == 2) || (effAndroid.IsActive && effAndroid.Level == 2));
+
+                _btnStopManual.Enabled = !hardLocked;
+                _btnStopManual.Text = hardLocked
+                    ? "Lv.3 ハードロック中（停止不可）"
+                    : (lv2Active ? "手動ブロックを停止（確認入力）" : "手動ブロックを停止");
+
+                if (hardLocked)
+                {
+                    _lblHardLockNote.Text = "Lv.3 ハードロック中（Watchdog 保護稼働中）: 終了時刻まで解除・短縮・引き下げ不可";
+                    _lblHardLockNote.ForeColor = Color.FromArgb(255, 130, 140);
+                    _lblHardLockNote.Visible = true;
+                }
+                else if (lv2Active)
+                {
+                    _lblHardLockNote.Text = "Lv.2 稼働中: Lv.1 への引き下げや時間短縮は禁止（停止には確認フレーズが必要です）";
+                    _lblHardLockNote.ForeColor = Color.FromArgb(255, 175, 115);
+                    _lblHardLockNote.Visible = true;
+                }
+                else
+                {
+                    _lblHardLockNote.Visible = false;
+                }
             });
+        }
+
+        private string FormatHeartbeat(DeviceHeartbeat hb)
+        {
+            if (hb == null || hb.lastSeen <= 0) return "スマホ通信: 未接続";
+            long secAgo = Math.Max(0, (TimeUtil.NowMs() - hb.lastSeen) / 1000);
+            string ago = secAgo < 60 ? (secAgo + "秒前")
+                : (secAgo < 3600 ? ((secAgo / 60) + "分前") : ((secAgo / 3600) + "時間前"));
+            return string.Format("スマホ通信: {0} ({1})", ago, hb.status ?? "idle");
+        }
+
+        private void ApplyBadge(Label lbl, string text, Color bg, Color fg)
+        {
+            lbl.Text = text;
+            lbl.BackColor = bg;
+            lbl.ForeColor = fg;
+        }
+
+        private void ApplyLevelBadge(Label lbl, int level)
+        {
+            string text = string.Format("  Lv.{0} ブロック稼働中  ", level);
+            if (level == 1) ApplyBadge(lbl, text, Color.FromArgb(78, 60, 18), Color.FromArgb(255, 215, 102));
+            else if (level == 2) ApplyBadge(lbl, text, Color.FromArgb(88, 40, 18), Color.FromArgb(255, 155, 105));
+            else ApplyBadge(lbl, text, Color.FromArgb(92, 24, 34), Color.FromArgb(255, 125, 138));
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
@@ -141,31 +280,50 @@ namespace FocusGuard
 
         private void BuildLayout()
         {
-            // Top Status Card
+            // Top Dual-Device Status Header
             var topCard = new Panel
             {
                 Dock = DockStyle.Top,
-                Height = 96,
+                Height = 136,
                 BackColor = _cardBg,
-                Padding = new Padding(16, 12, 16, 10)
+                Padding = new Padding(12, 10, 12, 8)
             };
             Controls.Add(topCard);
 
-            _lblStatusBadge = new Label
+            // Left: PC Card
+            var pcBox = new Panel
+            {
+                Location = new Point(14, 10),
+                Size = new Size(326, 94),
+                BackColor = _subCardBg
+            };
+            topCard.Controls.Add(pcBox);
+
+            pcBox.Controls.Add(new Label
+            {
+                Text = "Windows PC",
+                Font = new Font("Meiryo UI", 8.5f, FontStyle.Bold),
+                ForeColor = _textSub,
+                Location = new Point(10, 6),
+                AutoSize = true
+            });
+
+            _lblPcBadge = new Label
             {
                 Text = "  待機中  ",
-                Font = new Font("Meiryo UI", 10.5f, FontStyle.Bold),
+                Font = new Font("Meiryo UI", 9f, FontStyle.Bold),
                 AutoSize = true,
-                Location = new Point(16, 14),
-                Padding = new Padding(4, 3, 4, 3)
+                Location = new Point(10, 26),
+                Padding = new Padding(3, 2, 3, 2)
             };
-            topCard.Controls.Add(_lblStatusBadge);
+            pcBox.Controls.Add(_lblPcBadge);
 
             _btnEndSnooze = new Button
             {
-                Text = "一時許可を今すぐ終了",
-                Location = new Point(470, 12),
-                Size = new Size(185, 28),
+                Text = "一時許可終了",
+                Location = new Point(226, 4),
+                Size = new Size(92, 22),
+                Font = new Font("Meiryo UI", 7.8f),
                 BackColor = Color.FromArgb(62, 74, 96),
                 ForeColor = Color.White,
                 FlatStyle = FlatStyle.Flat,
@@ -173,24 +331,63 @@ namespace FocusGuard
             };
             _btnEndSnooze.FlatAppearance.BorderSize = 0;
             _btnEndSnooze.Click += (s, e) => { _sync.LocalSnoozeUntilMs = 0; };
-            topCard.Controls.Add(_btnEndSnooze);
+            pcBox.Controls.Add(_btnEndSnooze);
 
-            _lblStatusDetail = new Label
+            _lblPcDetail = new Label
             {
                 Text = "読み込み中...",
+                Font = new Font("Meiryo UI", 8.5f),
                 ForeColor = _textMain,
-                Location = new Point(16, 46),
-                Size = new Size(640, 22)
+                Location = new Point(10, 52),
+                Size = new Size(306, 36)
             };
-            topCard.Controls.Add(_lblStatusDetail);
+            pcBox.Controls.Add(_lblPcDetail);
+
+            // Right: Android Card
+            var androidBox = new Panel
+            {
+                Location = new Point(352, 10),
+                Size = new Size(326, 94),
+                BackColor = _subCardBg
+            };
+            topCard.Controls.Add(androidBox);
+
+            androidBox.Controls.Add(new Label
+            {
+                Text = "Android スマホ",
+                Font = new Font("Meiryo UI", 8.5f, FontStyle.Bold),
+                ForeColor = _textSub,
+                Location = new Point(10, 6),
+                AutoSize = true
+            });
+
+            _lblAndroidBadge = new Label
+            {
+                Text = "  待機中  ",
+                Font = new Font("Meiryo UI", 9f, FontStyle.Bold),
+                AutoSize = true,
+                Location = new Point(10, 26),
+                Padding = new Padding(3, 2, 3, 2)
+            };
+            androidBox.Controls.Add(_lblAndroidBadge);
+
+            _lblAndroidDetail = new Label
+            {
+                Text = "読み込み中...",
+                Font = new Font("Meiryo UI", 8.5f),
+                ForeColor = _textMain,
+                Location = new Point(10, 52),
+                Size = new Size(306, 36)
+            };
+            androidBox.Controls.Add(_lblAndroidDetail);
 
             _lblSyncStatus = new Label
             {
                 Text = _sync.LastSyncMessage,
                 ForeColor = _textSub,
-                Font = new Font("Meiryo UI", 8.5f),
-                Location = new Point(16, 70),
-                Size = new Size(640, 20)
+                Font = new Font("Meiryo UI", 8.3f),
+                Location = new Point(14, 110),
+                Size = new Size(660, 20)
             };
             topCard.Controls.Add(_lblSyncStatus);
 
@@ -220,58 +417,56 @@ namespace FocusGuard
         {
             var panel = new Panel
             {
-                Location = new Point(16, 16),
-                Size = new Size(635, 390),
+                Location = new Point(16, 14),
+                Size = new Size(648, 405),
                 BackColor = _cardBg
             };
             tab.Controls.Add(panel);
 
             AddSectionHeader(panel, "今すぐブラウザブロックを開始（PC / スマホへ一括指示）", 18, 16);
 
-            // Level radios
-            var lblLv = new Label { Text = "強度レベル:", ForeColor = _textSub, Location = new Point(20, 52), AutoSize = true };
+            var lblLv = new Label { Text = "強度レベル:", ForeColor = _textSub, Location = new Point(20, 50), AutoSize = true };
             panel.Controls.Add(lblLv);
 
             _rbLv1 = new RadioButton
             {
-                Text = "Lv.1  気づき（15秒待機 → 5分許可可 / タブ維持）",
-                Location = new Point(24, 78),
-                Size = new Size(580, 26),
+                Text = "Lv.1  気づき（15秒待機 → 5分許可可 / いつでも停止可）",
+                Location = new Point(24, 76),
+                Size = new Size(600, 26),
                 ForeColor = Color.FromArgb(255, 220, 125)
             };
             _rbLv2 = new RadioButton
             {
-                Text = "Lv.2  ひと手間（ランダムフレーズ手入力で10分許可可）",
-                Location = new Point(24, 108),
-                Size = new Size(580, 26),
+                Text = "Lv.2  ひと手間（Lv.1へ引き下げ不可 / 停止・一時許可にフレーズ手入力）",
+                Location = new Point(24, 106),
+                Size = new Size(600, 26),
                 ForeColor = Color.FromArgb(255, 165, 115),
                 Checked = true
             };
             _rbLv3 = new RadioButton
             {
-                Text = "Lv.3  強制ブロック（即終了・時間終了まで解除ロック）",
-                Location = new Point(24, 138),
-                Size = new Size(580, 26),
+                Text = "Lv.3  強制ブロック（即終了・解除ロック・Watchdog自動復活保護）",
+                Location = new Point(24, 136),
+                Size = new Size(600, 26),
                 ForeColor = Color.FromArgb(255, 125, 138)
             };
             panel.Controls.AddRange(new Control[] { _rbLv1, _rbLv2, _rbLv3 });
 
-            // Target & Duration
-            var lblTarget = new Label { Text = "対象端末:", ForeColor = _textSub, Location = new Point(20, 182), AutoSize = true };
+            var lblTarget = new Label { Text = "対象端末:", ForeColor = _textSub, Location = new Point(20, 180), AutoSize = true };
             _cmbTarget = new ComboBox
             {
-                Location = new Point(20, 206),
-                Size = new Size(275, 28),
+                Location = new Point(20, 204),
+                Size = new Size(285, 28),
                 DropDownStyle = ComboBoxStyle.DropDownList
             };
             _cmbTarget.Items.AddRange(new object[] { "PC + スマホ 両方 (all)", "Windows PC のみ (pc)", "Android スマホのみ (android)" });
             _cmbTarget.SelectedIndex = 0;
 
-            var lblDur = new Label { Text = "継続時間:", ForeColor = _textSub, Location = new Point(320, 182), AutoSize = true };
+            var lblDur = new Label { Text = "継続時間:", ForeColor = _textSub, Location = new Point(328, 180), AutoSize = true };
             _cmbDuration = new ComboBox
             {
-                Location = new Point(320, 206),
-                Size = new Size(275, 28),
+                Location = new Point(328, 204),
+                Size = new Size(285, 28),
                 DropDownStyle = ComboBoxStyle.DropDownList
             };
             _cmbDuration.Items.AddRange(new object[] { "15分", "30分", "60分（1時間）", "120分（2時間）", "手動解除まで（Lv.1/2推奨）" });
@@ -279,12 +474,11 @@ namespace FocusGuard
 
             panel.Controls.AddRange(new Control[] { lblTarget, _cmbTarget, lblDur, _cmbDuration });
 
-            // Buttons
             _btnStartManual = new Button
             {
                 Text = "この内容でブロック開始",
-                Location = new Point(20, 256),
-                Size = new Size(280, 44),
+                Location = new Point(20, 254),
+                Size = new Size(290, 44),
                 BackColor = Color.FromArgb(52, 116, 235),
                 ForeColor = Color.White,
                 Font = new Font("Meiryo UI", 10.5f, FontStyle.Bold),
@@ -297,11 +491,11 @@ namespace FocusGuard
             _btnStopManual = new Button
             {
                 Text = "手動ブロックを停止",
-                Location = new Point(316, 256),
-                Size = new Size(280, 44),
+                Location = new Point(324, 254),
+                Size = new Size(290, 44),
                 BackColor = Color.FromArgb(62, 70, 88),
                 ForeColor = Color.White,
-                Font = new Font("Meiryo UI", 10f),
+                Font = new Font("Meiryo UI", 9.8f),
                 FlatStyle = FlatStyle.Flat,
                 Cursor = Cursors.Hand
             };
@@ -312,21 +506,21 @@ namespace FocusGuard
 
             _lblHardLockNote = new Label
             {
-                Text = "Lv.3 ハードロック中のため、終了時刻まで停止ボタンはロックされています。",
+                Text = "",
                 ForeColor = Color.FromArgb(255, 130, 140),
-                Location = new Point(20, 312),
-                Size = new Size(590, 24),
+                Location = new Point(20, 310),
+                Size = new Size(605, 28),
                 Visible = false
             };
             panel.Controls.Add(_lblHardLockNote);
 
             var lblTip = new Label
             {
-                Text = "ヒント: ウィンドウを×で閉じてもタスクトレイに常駐して監視を続けます。\r\nスマホやWebブラウザからも同じ画面で両端末を操作できます（同期・設定タブを参照）。",
+                Text = "ヒント: ウィンドウを×で閉じてもタスクトレイに常駐して監視を続けます。\r\nLv.3 発動中は Watchdog プロセスが連動し、タスクマネージャーで強制終了されても 1 秒で自動復活します。",
                 ForeColor = _textSub,
                 Font = new Font("Meiryo UI", 8.5f),
-                Location = new Point(20, 342),
-                Size = new Size(590, 38)
+                Location = new Point(20, 348),
+                Size = new Size(605, 42)
             };
             panel.Controls.Add(lblTip);
         }
@@ -336,7 +530,7 @@ namespace FocusGuard
             _lvSchedules = new ListView
             {
                 Location = new Point(16, 14),
-                Size = new Size(635, 170),
+                Size = new Size(648, 170),
                 View = View.Details,
                 FullRowSelect = true,
                 GridLines = true,
@@ -344,9 +538,9 @@ namespace FocusGuard
                 ForeColor = _textMain
             };
             _lvSchedules.Columns.Add("状態", 56);
-            _lvSchedules.Columns.Add("ルール名", 160);
-            _lvSchedules.Columns.Add("時間帯", 110);
-            _lvSchedules.Columns.Add("曜日", 135);
+            _lvSchedules.Columns.Add("ルール名", 168);
+            _lvSchedules.Columns.Add("時間帯", 112);
+            _lvSchedules.Columns.Add("曜日", 136);
             _lvSchedules.Columns.Add("強度", 65);
             _lvSchedules.Columns.Add("対象", 95);
             tab.Controls.Add(_lvSchedules);
@@ -376,11 +570,10 @@ namespace FocusGuard
             _btnSchedDelete.Click += OnScheduleDelete;
             tab.Controls.AddRange(new Control[] { _btnSchedToggle, _btnSchedDelete });
 
-            // Add new schedule card
             var addCard = new Panel
             {
                 Location = new Point(16, 236),
-                Size = new Size(635, 190),
+                Size = new Size(648, 190),
                 BackColor = _cardBg
             };
             tab.Controls.Add(addCard);
@@ -388,21 +581,21 @@ namespace FocusGuard
             AddSectionHeader(addCard, "新しい時間帯スケジュールを追加（日跨ぎ例: 23:00 〜 07:00 対応）", 16, 12);
 
             addCard.Controls.Add(new Label { Text = "ルール名:", ForeColor = _textSub, Location = new Point(16, 44), AutoSize = true });
-            _txtSchedName = new TextBox { Text = "夜の集中・就寝前", Location = new Point(16, 64), Size = new Size(180, 26) };
+            _txtSchedName = new TextBox { Text = "夜の集中・就寝前", Location = new Point(16, 64), Size = new Size(185, 26) };
 
-            addCard.Controls.Add(new Label { Text = "開始 (HH:mm):", ForeColor = _textSub, Location = new Point(208, 44), AutoSize = true });
-            _txtSchedStart = new TextBox { Text = "23:00", Location = new Point(208, 64), Size = new Size(85, 26) };
+            addCard.Controls.Add(new Label { Text = "開始 (HH:mm):", ForeColor = _textSub, Location = new Point(212, 44), AutoSize = true });
+            _txtSchedStart = new TextBox { Text = "23:00", Location = new Point(212, 64), Size = new Size(85, 26) };
 
-            addCard.Controls.Add(new Label { Text = "終了 (HH:mm):", ForeColor = _textSub, Location = new Point(304, 44), AutoSize = true });
-            _txtSchedEnd = new TextBox { Text = "07:00", Location = new Point(304, 64), Size = new Size(85, 26) };
+            addCard.Controls.Add(new Label { Text = "終了 (HH:mm):", ForeColor = _textSub, Location = new Point(308, 44), AutoSize = true });
+            _txtSchedEnd = new TextBox { Text = "07:00", Location = new Point(308, 64), Size = new Size(85, 26) };
 
-            addCard.Controls.Add(new Label { Text = "強度:", ForeColor = _textSub, Location = new Point(402, 44), AutoSize = true });
-            _cmbSchedLevel = new ComboBox { Location = new Point(402, 64), Size = new Size(95, 26), DropDownStyle = ComboBoxStyle.DropDownList };
+            addCard.Controls.Add(new Label { Text = "強度:", ForeColor = _textSub, Location = new Point(406, 44), AutoSize = true });
+            _cmbSchedLevel = new ComboBox { Location = new Point(406, 64), Size = new Size(95, 26), DropDownStyle = ComboBoxStyle.DropDownList };
             _cmbSchedLevel.Items.AddRange(new object[] { "Lv.1", "Lv.2", "Lv.3" });
             _cmbSchedLevel.SelectedIndex = 1;
 
-            addCard.Controls.Add(new Label { Text = "対象:", ForeColor = _textSub, Location = new Point(508, 44), AutoSize = true });
-            _cmbSchedTarget = new ComboBox { Location = new Point(508, 64), Size = new Size(110, 26), DropDownStyle = ComboBoxStyle.DropDownList };
+            addCard.Controls.Add(new Label { Text = "対象:", ForeColor = _textSub, Location = new Point(512, 44), AutoSize = true });
+            _cmbSchedTarget = new ComboBox { Location = new Point(512, 64), Size = new Size(118, 26), DropDownStyle = ComboBoxStyle.DropDownList };
             _cmbSchedTarget.Items.AddRange(new object[] { "両方", "PCのみ", "スマホのみ" });
             _cmbSchedTarget.SelectedIndex = 0;
 
@@ -448,8 +641,7 @@ namespace FocusGuard
             };
             tab.Controls.Add(scroll);
 
-            // Sync Card
-            var syncCard = new Panel { Location = new Point(16, 12), Size = new Size(620, 224), BackColor = _cardBg };
+            var syncCard = new Panel { Location = new Point(16, 12), Size = new Size(632, 224), BackColor = _cardBg };
             scroll.Controls.Add(syncCard);
 
             AddSectionHeader(syncCard, "クラウド同期設定（Supabase で PC とスマホを同期）", 16, 12);
@@ -459,19 +651,19 @@ namespace FocusGuard
             syncCard.Controls.AddRange(new Control[] { _rbModeLocal, _rbModeSupabase });
 
             syncCard.Controls.Add(new Label { Text = "Supabase URL:", ForeColor = _textSub, Location = new Point(18, 76), Size = new Size(125, 22) });
-            _txtSupabaseUrl = new TextBox { Location = new Point(146, 73), Size = new Size(455, 24) };
+            _txtSupabaseUrl = new TextBox { Location = new Point(146, 73), Size = new Size(466, 24) };
 
             syncCard.Controls.Add(new Label { Text = "Anon Key:", ForeColor = _textSub, Location = new Point(18, 108), Size = new Size(125, 22) });
-            _txtSupabaseKey = new TextBox { Location = new Point(146, 105), Size = new Size(455, 24) };
+            _txtSupabaseKey = new TextBox { Location = new Point(146, 105), Size = new Size(466, 24) };
 
             syncCard.Controls.Add(new Label { Text = "Sync Key (秘密鍵):", ForeColor = _textSub, Location = new Point(18, 140), Size = new Size(125, 22) });
-            _txtSyncKey = new TextBox { Location = new Point(146, 137), Size = new Size(340, 24) };
+            _txtSyncKey = new TextBox { Location = new Point(146, 137), Size = new Size(350, 24) };
 
             var btnGenKey = new Button
             {
                 Text = "ランダム生成",
-                Location = new Point(494, 136),
-                Size = new Size(107, 26),
+                Location = new Point(504, 136),
+                Size = new Size(108, 26),
                 BackColor = Color.FromArgb(52, 64, 84),
                 ForeColor = Color.White,
                 FlatStyle = FlatStyle.Flat
@@ -495,7 +687,7 @@ namespace FocusGuard
             {
                 Text = "スマホ設定用ハッシュをコピー",
                 Location = new Point(204, 178),
-                Size = new Size(215, 32),
+                Size = new Size(220, 32),
                 BackColor = Color.FromArgb(46, 98, 86),
                 ForeColor = Color.White,
                 FlatStyle = FlatStyle.Flat
@@ -506,8 +698,8 @@ namespace FocusGuard
             _btnOpenWebUi = new Button
             {
                 Text = "ローカルWeb UIを開く",
-                Location = new Point(430, 178),
-                Size = new Size(171, 32),
+                Location = new Point(436, 178),
+                Size = new Size(176, 32),
                 BackColor = Color.FromArgb(62, 68, 84),
                 ForeColor = Color.White,
                 FlatStyle = FlatStyle.Flat
@@ -524,14 +716,13 @@ namespace FocusGuard
                 _btnTestSupabase, _btnCopyMobileLink, _btnOpenWebUi
             });
 
-            // Behavior Card
-            var behCard = new Panel { Location = new Point(16, 248), Size = new Size(620, 190), BackColor = _cardBg };
+            var behCard = new Panel { Location = new Point(16, 248), Size = new Size(632, 190), BackColor = _cardBg };
             scroll.Controls.Add(behCard);
 
             AddSectionHeader(behCard, "監視対象ブラウザ・摩擦パラメータ・自動起動", 16, 12);
 
             behCard.Controls.Add(new Label { Text = "対象プロセス (カンマ区切り):", ForeColor = _textSub, Location = new Point(18, 44), AutoSize = true });
-            _txtBrowsers = new TextBox { Location = new Point(18, 64), Size = new Size(582, 24) };
+            _txtBrowsers = new TextBox { Location = new Point(18, 64), Size = new Size(594, 24) };
             behCard.Controls.Add(_txtBrowsers);
 
             behCard.Controls.Add(new Label { Text = "Lv.1 待機(秒):", ForeColor = _textSub, Location = new Point(18, 102), AutoSize = true });
@@ -554,7 +745,7 @@ namespace FocusGuard
             _btnSaveSettings = new Button
             {
                 Text = "設定をすべて保存",
-                Location = new Point(420, 134),
+                Location = new Point(432, 134),
                 Size = new Size(180, 36),
                 BackColor = Color.FromArgb(52, 116, 235),
                 ForeColor = Color.White,
@@ -622,7 +813,10 @@ namespace FocusGuard
             _numLv1Allow.Value = Math.Max(_numLv1Allow.Minimum, Math.Min(_numLv1Allow.Maximum, st.lv1AllowMinutes));
             _numLv2Allow.Value = Math.Max(_numLv2Allow.Minimum, Math.Min(_numLv2Allow.Maximum, st.lv2AllowMinutes));
 
-            UpdateLiveStatus(RuleEngine.Evaluate(st, "pc", _sync.LocalSnoozeUntilMs));
+            UpdateLiveStatus(
+                RuleEngine.Evaluate(st, "pc", _sync.LocalSnoozeUntilMs),
+                RuleEngine.Evaluate(st, "android", 0),
+                st.devices != null ? st.devices.android : null);
         }
 
         private void OnStartManualClick(object sender, EventArgs e)
@@ -654,19 +848,36 @@ namespace FocusGuard
             _sync.LocalSnoozeUntilMs = 0;
 
             string err;
-            if (!_sync.UpdateState(st, out err))
+            if (!_sync.UpdateState(st, out err, false))
             {
-                MessageBox.Show(err, "変更できません", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(err, "上書きできません", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
 
         private void OnStopManualClick(object sender, EventArgs e)
         {
+            var cur = _sync.GetState();
+            var effPc = RuleEngine.Evaluate(cur, "pc", 0);
+            var effAn = RuleEngine.Evaluate(cur, "android", 0);
+            if (effPc.IsHardLocked || effAn.IsHardLocked)
+            {
+                MessageBox.Show("Lv.3 ハードブロック中のため、終了時刻まで停止できません。", "ロック中", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            bool needsLv2Challenge = (effPc.IsActive && effPc.Level == 2) || (effAn.IsActive && effAn.Level == 2);
+            bool passed = false;
+            if (needsLv2Challenge)
+            {
+                passed = PromptLv2Challenge("Lv.2 ブロックを停止するには、下のフレーズを手入力してください（貼付不可）:");
+                if (!passed) return;
+            }
+
             var st = _sync.GetState();
             st.manualSession.active = false;
             st.manualSession.expiresAt = 0;
             string err;
-            if (!_sync.UpdateState(st, out err))
+            if (!_sync.UpdateState(st, out err, passed))
             {
                 MessageBox.Show(err, "停止できません", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
@@ -695,21 +906,17 @@ namespace FocusGuard
                 target = _cmbSchedTarget.SelectedIndex == 1 ? "pc" : (_cmbSchedTarget.SelectedIndex == 2 ? "android" : "all")
             };
 
-            DateTime dummy;
-            // Basic time format check
             TimeSpan ts1, ts2;
             if (!TimeSpan.TryParse(rule.startTime, out ts1) || !TimeSpan.TryParse(rule.endTime, out ts2))
             {
                 MessageBox.Show("時刻は 23:00 のように HH:mm 形式で入力してください。", "入力エラー", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
-            dummy = DateTime.Now;
-            RuleEngine.IsScheduleActiveNow(rule, dummy, out dummy);
 
             var st = _sync.GetState();
             st.schedules.Add(rule);
             string err;
-            if (!_sync.UpdateState(st, out err))
+            if (!_sync.UpdateState(st, out err, false))
                 MessageBox.Show(err, "追加エラー", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
 
@@ -722,9 +929,7 @@ namespace FocusGuard
             if (target == null) return;
             target.enabled = !target.enabled;
 
-            string err;
-            if (!_sync.UpdateState(st, out err))
-                MessageBox.Show(err, "変更できません", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            ApplyScheduleChangeWithLv2Check(st, "稼働中の Lv.2 スケジュールを OFF にするには確認フレーズを入力してください:");
         }
 
         private void OnScheduleDelete(object sender, EventArgs e)
@@ -734,9 +939,25 @@ namespace FocusGuard
             var st = _sync.GetState();
             st.schedules.RemoveAll(s => s.id == id);
 
+            ApplyScheduleChangeWithLv2Check(st, "稼働中の Lv.2 スケジュールを削除するには確認フレーズを入力してください:");
+        }
+
+        private void ApplyScheduleChangeWithLv2Check(GuardState proposed, string challengePrompt)
+        {
             string err;
-            if (!_sync.UpdateState(st, out err))
-                MessageBox.Show(err, "削除できません", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            if (_sync.UpdateState(proposed, out err, false)) return;
+
+            // If blocked only by Lv.2 (not Lv.3), allow explicit challenge
+            if (!RuleEngine.WouldWeakenHardLock(_sync.GetState(), proposed))
+            {
+                if (PromptLv2Challenge(challengePrompt))
+                {
+                    if (!_sync.UpdateState(proposed, out err, true))
+                        MessageBox.Show(err, "変更できません", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+                return;
+            }
+            MessageBox.Show(err, "変更できません", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
 
         private async void OnTestSupabase(object sender, EventArgs e)
@@ -774,7 +995,7 @@ namespace FocusGuard
                 Uri.EscapeDataString(url), Uri.EscapeDataString(key), Uri.EscapeDataString(syncKey));
             Clipboard.SetText(hash);
             MessageBox.Show(
-                "スマホ設定用ハッシュをクリップボードにコピーしました！\r\nホスティングした Web リモコンURL の末尾にそのまま貼って開くと、スマホ側が一瞬で設定完了します。",
+                "スマホ設定用ハッシュをクリップボードにコピーしました！\r\nWeb リモコン URL の末尾や Android アプリの取り込み欄に貼り付けてください。",
                 "コピー完了", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
@@ -802,7 +1023,7 @@ namespace FocusGuard
             st.lv2AllowMinutes = (int)_numLv2Allow.Value;
 
             string err;
-            if (!_sync.UpdateState(st, out err))
+            if (!_sync.UpdateState(st, out err, false))
             {
                 MessageBox.Show(err, "一部保存できませんでした", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;

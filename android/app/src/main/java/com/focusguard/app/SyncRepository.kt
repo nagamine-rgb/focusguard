@@ -91,10 +91,11 @@ class SyncRepository private constructor(context: Context) {
         }
     }
 
-    fun updateState(next: GuardState): Pair<Boolean, String?> {
+    fun updateState(next: GuardState, lv2ChallengePassed: Boolean = false): Pair<Boolean, String?> {
         val current = getState()
-        if (RuleEngine.wouldWeakenHardLock(current, next)) {
-            return Pair(false, "Lv.3 ハードブロック中のため、終了時刻まで解除・引き下げはできません。")
+        val blockErr = RuleEngine.validateTransition(current, next, lv2ChallengePassed)
+        if (blockErr != null) {
+            return Pair(false, blockErr)
         }
         if (next.manualSession.active && next.manualSession.expiresAt > 0L && next.manualSession.expiresAt <= System.currentTimeMillis()) {
             next.manualSession.active = false

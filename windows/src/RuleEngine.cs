@@ -159,28 +159,51 @@ namespace FocusGuard
         }
 
         /// <summary>
-        /// Checks whether an update would weaken an active Lv.3 hard lock.
+        /// Validates rule transitions against Lv.3 hard lock and Lv.2 downgrade/shortening rules.
+        /// Returns null if allowed, or an error message if blocked.
         /// </summary>
+        public static string ValidateTransition(GuardState current, GuardState proposed, bool lv2ChallengePassed)
+        {
+            string[] devices = new[] { "pc", "android" };
+            foreach (var dev in devices)
+            {
+                var cur = Evaluate(current, dev, 0);
+                var next = Evaluate(proposed, dev, 0);
+
+                // Lv.3: never allow stopping, downgrading, removing target, or shortening remaining time
+                if (cur.IsHardLocked)
+                {
+                    if (!next.IsHardLocked)
+                        return "Lv.3 ハードブロック中のため、終了時刻まで解除またはレベル引き下げはできません。";
+                    if (IsShortened(cur.EndsAtMs, next.EndsAtMs))
+                        return "Lv.3 ハードブロック中のため、残り時間を短縮することはできません。";
+                }
+                // Lv.2: prevent silent downgrade (e.g. Lv.2 -> Lv.1) or shortening unless explicit challenge passed
+                else if (cur.IsActive && cur.Level == 2 && !lv2ChallengePassed)
+                {
+                    if (!next.IsActive)
+                        return "Lv.2 ブロックを停止するには、確認フレーズの入力が必要です。";
+                    if (next.Level < 2)
+                        return "Lv.2 稼働中は Lv.1 へ引き下げできません（解除するには「停止」から確認フレーズを入力してください）。";
+                    if (next.Level == 2 && IsShortened(cur.EndsAtMs, next.EndsAtMs))
+                        return "Lv.2 稼働中は残り時間を短縮できません（延長や Lv.3 への強化は可能です）。";
+                }
+            }
+            return null;
+        }
+
+        private static bool IsShortened(long? curEndsAt, long? nextEndsAt)
+        {
+            // Indefinite (null) -> finite is a shortening
+            if (!curEndsAt.HasValue && nextEndsAt.HasValue) return true;
+            if (curEndsAt.HasValue && nextEndsAt.HasValue && nextEndsAt.Value + 5000 < curEndsAt.Value)
+                return true;
+            return false;
+        }
+
         public static bool WouldWeakenHardLock(GuardState current, GuardState proposed)
         {
-            var curPc = Evaluate(current, "pc", 0);
-            var curAndroid = Evaluate(current, "android", 0);
-
-            if (curPc.IsHardLocked)
-            {
-                var nextPc = Evaluate(proposed, "pc", 0);
-                if (!nextPc.IsHardLocked) return true;
-                if (curPc.EndsAtMs.HasValue && nextPc.EndsAtMs.HasValue && nextPc.EndsAtMs.Value + 5000 < curPc.EndsAtMs.Value)
-                    return true;
-            }
-            if (curAndroid.IsHardLocked)
-            {
-                var nextAndroid = Evaluate(proposed, "android", 0);
-                if (!nextAndroid.IsHardLocked) return true;
-                if (curAndroid.EndsAtMs.HasValue && nextAndroid.EndsAtMs.HasValue && nextAndroid.EndsAtMs.Value + 5000 < curAndroid.EndsAtMs.Value)
-                    return true;
-            }
-            return false;
+            return ValidateTransition(current, proposed, true) != null;
         }
     }
 }

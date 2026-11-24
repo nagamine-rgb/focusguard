@@ -35,18 +35,19 @@ class MainActivity : AppCompatActivity() {
     private var selectedLevel = 2
     private val dayLabels = arrayOf("日", "月", "火", "水", "木", "金", "土")
 
-    // Live UI references
-    private lateinit var permCard: LinearLayout
-    private lateinit var txtPermAccess: TextView
-    private lateinit var btnPermAccess: Button
-    private lateinit var txtPermOverlay: TextView
-    private lateinit var btnPermOverlay: Button
+    // Top compact warning (hidden once permissions are granted)
+    private lateinit var scrollView: ScrollView
+    private lateinit var permWarningBanner: TextView
 
-    private lateinit var txtPcStatus: TextView
-    private lateinit var txtAndroidStatus: TextView
+    // 1. Live dual status cards
+    private lateinit var txtPcLevel: TextView
+    private lateinit var txtPcSub: TextView
+    private lateinit var txtAndroidLevel: TextView
+    private lateinit var txtAndroidSub: TextView
     private lateinit var txtSyncStatus: TextView
     private lateinit var btnEndSnooze: Button
 
+    // 2. Remote controls
     private lateinit var btnLv1: Button
     private lateinit var btnLv2: Button
     private lateinit var btnLv3: Button
@@ -54,7 +55,15 @@ class MainActivity : AppCompatActivity() {
     private lateinit var spnDuration: Spinner
     private lateinit var btnStopManual: Button
 
+    // 3. Schedules
     private lateinit var scheduleContainer: LinearLayout
+
+    // 4. Bottom setup (Permissions + Supabase)
+    private lateinit var setupSection: LinearLayout
+    private lateinit var txtPermAccess: TextView
+    private lateinit var btnPermAccess: Button
+    private lateinit var txtPermOverlay: TextView
+    private lateinit var btnPermOverlay: Button
 
     private lateinit var inHashImport: EditText
     private lateinit var inUrl: EditText
@@ -104,108 +113,156 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun buildUi() {
-        val scroll = ScrollView(this).apply {
+        scrollView = ScrollView(this).apply {
             setBackgroundColor(Color.parseColor("#0D1119"))
         }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(20), dp(16), dp(40))
+            setPadding(dp(14), dp(14), dp(14), dp(40))
         }
-        scroll.addView(root)
+        scrollView.addView(root)
 
-        // Header
-        val header = TextView(this).apply {
+        // Compact Header row
+        val headerRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(10) }
+        }
+        val titleWrap = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        titleWrap.addView(TextView(this).apply {
             text = "FocusGuard"
             setTextColor(Color.WHITE)
-            textSize = 24f
+            textSize = 21f
             setTypeface(null, Typeface.BOLD)
-        }
-        val subHeader = TextView(this).apply {
-            text = "PC & Android デジタルデトックス リモコン"
+        })
+        txtSyncStatus = TextView(this).apply {
+            text = "同期待機中"
             setTextColor(Color.parseColor("#95A4BF"))
-            textSize = 13f
-            setPadding(0, dp(2), 0, dp(14))
+            textSize = 11.5f
         }
-        root.addView(header)
-        root.addView(subHeader)
+        titleWrap.addView(txtSyncStatus)
 
-        // 1. Permission card
-        permCard = makeCard()
-        permCard.addView(makeSectionTitle("スマホのブロック権限チェック"))
-
-        txtPermAccess = makeSubText("")
-        btnPermAccess = makeButton("「ユーザー補助」設定を開く", "#3B82F6") {
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-        }
-        txtPermOverlay = makeSubText("")
-        btnPermOverlay = makeButton("「他のアプリの上に表示」設定を開く", "#3B82F6") {
-            val i = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
-            startActivity(i)
-        }
-        val btnBattery = makeButton("バッテリー制限なしを設定（推奨）", "#334155") {
-            try {
-                val pm = getSystemService(POWER_SERVICE) as PowerManager
-                if (pm.isIgnoringBatteryOptimizations(packageName)) {
-                    toast("すでにバッテリー制限なしになっています！")
-                } else {
-                    val i = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                        data = Uri.parse("package:$packageName")
+        val btnSyncMini = Button(this).apply {
+            text = "同期"
+            isAllCaps = false
+            setTextColor(Color.parseColor("#CFE0FF"))
+            textSize = 12.5f
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#1D283B"))
+                cornerRadius = dp(9).toFloat()
+                setStroke(dp(1), Color.parseColor("#2E3E5C"))
+            }
+            layoutParams = LinearLayout.LayoutParams(dp(64), dp(34))
+            setOnClickListener {
+                io.execute {
+                    repo.pullFromSupabase(false)
+                    repo.sendHeartbeat()
+                    mainHandler.post {
+                        refreshUiFromCache()
+                        toast(repo.lastSyncMessage)
                     }
-                    startActivity(i)
                 }
-            } catch (_: Exception) {
-                startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
             }
         }
+        headerRow.addView(titleWrap)
+        headerRow.addView(btnSyncMini)
+        root.addView(headerRow)
 
-        permCard.addView(txtPermAccess)
-        permCard.addView(btnPermAccess)
-        permCard.addView(txtPermOverlay)
-        permCard.addView(btnPermOverlay)
-        permCard.addView(btnBattery)
-        root.addView(permCard)
+        // Compact warning banner (ONLY visible when required permissions are OFF)
+        permWarningBanner = TextView(this).apply {
+            text = "⚠️ スマホのブロック権限が未設定です（タップして設定へ移動）"
+            setTextColor(Color.parseColor("#FDE68A"))
+            textSize = 12.5f
+            setTypeface(null, Typeface.BOLD)
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#422D0E"))
+                cornerRadius = dp(10).toFloat()
+                setStroke(dp(1), Color.parseColor("#B45309"))
+            }
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(12) }
+            visibility = View.GONE
+            setOnClickListener {
+                scrollView.post { scrollView.smoothScrollTo(0, setupSection.top) }
+            }
+        }
+        root.addView(permWarningBanner)
 
-        // 2. Status card
+        // ============================================================
+        // 1. 現在の稼働状況（2カラム・最優先で見やすく！）
+        // ============================================================
         val statusCard = makeCard()
-        statusCard.addView(makeSectionTitle("現在の稼働状態"))
-        txtPcStatus = TextView(this).apply {
-            textSize = 14f
-            setTextColor(Color.WHITE)
-            setPadding(0, dp(4), 0, dp(4))
+        statusCard.addView(makeSectionTitle("現在の稼働状況"))
+
+        val dualRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
         }
-        txtAndroidStatus = TextView(this).apply {
-            textSize = 14f
-            setTextColor(Color.WHITE)
-            setPadding(0, dp(2), 0, dp(6))
+
+        val pcBox = makeDeviceTile("Windows PC").also { box ->
+            txtPcLevel = TextView(this).apply {
+                text = "待機中"
+                textSize = 16.5f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(Color.parseColor("#6EE7B7"))
+                setPadding(0, dp(4), 0, dp(2))
+            }
+            txtPcSub = TextView(this).apply {
+                text = "通常利用OK"
+                textSize = 12f
+                setTextColor(Color.parseColor("#95A4BF"))
+            }
+            box.addView(txtPcLevel)
+            box.addView(txtPcSub)
         }
-        txtSyncStatus = makeSubText("同期待機中")
+        (pcBox.layoutParams as LinearLayout.LayoutParams).marginEnd = dp(8)
+
+        val androidBox = makeDeviceTile("Android スマホ").also { box ->
+            txtAndroidLevel = TextView(this).apply {
+                text = "待機中"
+                textSize = 16.5f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(Color.parseColor("#6EE7B7"))
+                setPadding(0, dp(4), 0, dp(2))
+            }
+            txtAndroidSub = TextView(this).apply {
+                text = "通常利用OK"
+                textSize = 12f
+                setTextColor(Color.parseColor("#95A4BF"))
+            }
+            box.addView(txtAndroidLevel)
+            box.addView(txtAndroidSub)
+        }
+
+        dualRow.addView(pcBox)
+        dualRow.addView(androidBox)
+        statusCard.addView(dualRow)
+
         btnEndSnooze = makeButton("一時許可を今すぐ終了", "#475569") {
             repo.setSnoozeUntilMs(0L)
             refreshUiFromCache()
             toast("一時許可を終了しました")
         }.apply { visibility = View.GONE }
-
-        val btnSyncNow = makeButton("今すぐ Supabase と同期", "#28354D") {
-            io.execute {
-                repo.pullFromSupabase(false)
-                repo.sendHeartbeat()
-                mainHandler.post {
-                    refreshUiFromCache()
-                    toast(repo.lastSyncMessage)
-                }
-            }
-        }
-
-        statusCard.addView(txtPcStatus)
-        statusCard.addView(txtAndroidStatus)
-        statusCard.addView(txtSyncStatus)
         statusCard.addView(btnEndSnooze)
-        statusCard.addView(btnSyncNow)
         root.addView(statusCard)
 
-        // 3. Remote control card
+        // ============================================================
+        // 2. 今すぐブロック開始（リモコン）
+        // ============================================================
         val remoteCard = makeCard()
-        remoteCard.addView(makeSectionTitle("今すぐブロック開始（一括リモート）"))
+        remoteCard.addView(makeSectionTitle("今すぐブロック開始"))
 
         val lvRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -223,28 +280,50 @@ class MainActivity : AppCompatActivity() {
         remoteCard.addView(lvRow)
         updateLevelButtons()
 
-        remoteCard.addView(makeLabel("対象端末"))
+        // Side-by-side Target & Duration selectors (saves vertical space!)
+        val optRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(6) }
+        }
+        val colTarget = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginEnd = dp(8)
+            }
+        }
+        colTarget.addView(makeLabel("対象端末"))
         spnTarget = Spinner(this).apply {
             adapter = ArrayAdapter(
                 this@MainActivity,
                 android.R.layout.simple_spinner_dropdown_item,
-                listOf("PC + スマホ 両方", "Windows PC のみ", "Android スマホのみ")
+                listOf("両方 (PC+スマホ)", "PC のみ", "スマホのみ")
             )
-            setBackgroundColor(Color.parseColor("#222C40"))
+            background = makeSpinnerBg()
         }
-        remoteCard.addView(spnTarget)
+        colTarget.addView(spnTarget)
 
-        remoteCard.addView(makeLabel("継続時間"))
+        val colDur = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        colDur.addView(makeLabel("継続時間"))
         spnDuration = Spinner(this).apply {
             adapter = ArrayAdapter(
                 this@MainActivity,
                 android.R.layout.simple_spinner_dropdown_item,
-                listOf("15分", "30分", "60分（1時間）", "120分（2時間）", "手動解除まで")
+                listOf("15分", "30分", "60分", "120分", "手動解除まで")
             )
             setSelection(1)
-            setBackgroundColor(Color.parseColor("#222C40"))
+            background = makeSpinnerBg()
         }
-        remoteCard.addView(spnDuration)
+        colDur.addView(spnDuration)
+
+        optRow.addView(colTarget)
+        optRow.addView(colDur)
+        remoteCard.addView(optRow)
 
         val btnStart = makeButton("この内容でブロック開始", "#3B82F6") { startManualSession() }
         btnStopManual = makeButton("手動ブロックを停止", "#3E4A61") { stopManualSession() }
@@ -252,21 +331,60 @@ class MainActivity : AppCompatActivity() {
         remoteCard.addView(btnStopManual)
         root.addView(remoteCard)
 
-        // 4. Schedules card
+        // ============================================================
+        // 3. 時間帯スケジュール
+        // ============================================================
         val schedCard = makeCard()
-        schedCard.addView(makeSectionTitle("時間帯スケジュール（日跨ぎ対応）"))
+        schedCard.addView(makeSectionTitle("時間帯スケジュール"))
         scheduleContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         schedCard.addView(scheduleContainer)
         val btnAddSched = makeButton("＋ 新しいスケジュールを追加", "#1F9D5D") { showAddScheduleDialog() }
         schedCard.addView(btnAddSched)
         root.addView(schedCard)
 
-        // 5. Supabase config card
-        val cfgCard = makeCard()
-        cfgCard.addView(makeSectionTitle("Supabase 接続設定（PC と同期）"))
-        cfgCard.addView(makeSubText("PC アプリの「スマホ設定用ハッシュをコピー」または Web リモコンの設定付きURLをそのまま貼ると自動入力されます。"))
+        // ============================================================
+        // 4. 初期設定エリア（権限チェック ＆ Supabase 接続 — 一番下へ移動）
+        // ============================================================
+        setupSection = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
-        inHashImport = makeInput("ここに #url=...&key=...&sync=... を貼り付け", false)
+        val permCard = makeCard()
+        permCard.addView(makeSectionTitle("初期設定：スマホの権限"))
+        txtPermAccess = makeSubText("")
+        btnPermAccess = makeButton("「ユーザー補助」設定を開く", "#3B82F6") {
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        }
+        txtPermOverlay = makeSubText("")
+        btnPermOverlay = makeButton("「他のアプリの上に表示」設定を開く", "#3B82F6") {
+            val i = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
+            startActivity(i)
+        }
+        val btnBattery = makeButton("バッテリー制限なし（推奨）", "#334155") {
+            try {
+                val pm = getSystemService(POWER_SERVICE) as PowerManager
+                if (pm.isIgnoringBatteryOptimizations(packageName)) {
+                    toast("すでにバッテリー制限なしになっています！")
+                } else {
+                    val i = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                        data = Uri.parse("package:$packageName")
+                    }
+                    startActivity(i)
+                }
+            } catch (_: Exception) {
+                startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            }
+        }
+        permCard.addView(txtPermAccess)
+        permCard.addView(btnPermAccess)
+        permCard.addView(txtPermOverlay)
+        permCard.addView(btnPermOverlay)
+        permCard.addView(btnBattery)
+        setupSection.addView(permCard)
+
+        val cfgCard = makeCard()
+        cfgCard.addView(makeSectionTitle("初期設定：Supabase 同期"))
+        cfgCard.addView(makeSubText("PC の「スマホ設定用ハッシュをコピー」を貼ると自動入力されます。"))
+
+        inHashImport = makeInput("#url=...&key=...&sync=... を貼り付け", false)
         val btnImport = makeButton("URL / ハッシュから一括取り込み", "#2C6B5C") {
             val parsed = repo.parseConfigFromHashOrUrl(inHashImport.text.toString())
             if (parsed == null) {
@@ -285,7 +403,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-
         cfgCard.addView(inHashImport)
         cfgCard.addView(btnImport)
 
@@ -326,14 +443,17 @@ class MainActivity : AppCompatActivity() {
         }
         cfgCard.addView(btnTest)
         cfgCard.addView(btnSaveCfg)
-        root.addView(cfgCard)
+        setupSection.addView(cfgCard)
 
-        setContentView(scroll)
+        root.addView(setupSection)
+        setContentView(scrollView)
     }
 
     private fun refreshPermissionCard() {
         val accOk = isAccessibilityEnabled()
         val ovOk = Settings.canDrawOverlays(this)
+
+        permWarningBanner.visibility = if (accOk && ovOk) View.GONE else View.VISIBLE
 
         txtPermAccess.text = if (accOk) "✅ ユーザー補助（ブラウザ検知）: 有効" else "⚠️ ユーザー補助（ブラウザ検知）: 未設定（必須）"
         txtPermAccess.setTextColor(if (accOk) Color.parseColor("#6EE7B7") else Color.parseColor("#FCD34D"))
@@ -362,35 +482,50 @@ class MainActivity : AppCompatActivity() {
         val effPc = RuleEngine.evaluate(st, "pc", 0L)
         val effAn = RuleEngine.evaluate(st, "android", repo.getSnoozeUntilMs())
 
-        txtPcStatus.text = if (effPc.isActive) {
-            "PC: Lv.${effPc.level} ブロック中（${effPc.reason} / 残り ${effPc.remainingText()}）"
+        // PC tile
+        if (effPc.isActive) {
+            txtPcLevel.text = "Lv.${effPc.level} 稼働中"
+            txtPcLevel.setTextColor(levelColor(effPc.level))
+            txtPcSub.text = "残り ${effPc.remainingText()}\n${effPc.reason}"
         } else {
-            "PC: 待機中（通常利用OK）"
+            txtPcLevel.text = "待機中"
+            txtPcLevel.setTextColor(Color.parseColor("#6EE7B7"))
+            txtPcSub.text = "通常利用OK"
         }
-        txtPcStatus.setTextColor(levelColor(if (effPc.isActive) effPc.level else 0))
 
-        txtAndroidStatus.text = when {
-            !effAn.isActive -> "スマホ: 待機中（通常利用OK）"
-            effAn.isSnoozed -> "スマホ: 一時許可中（残り ${effAn.snoozeRemainingSeconds} 秒）"
-            else -> "スマホ: Lv.${effAn.level} ブロック中（${effAn.reason} / 残り ${effAn.remainingText()}）"
-        }
-        txtAndroidStatus.setTextColor(
-            when {
-                !effAn.isActive -> Color.parseColor("#6EE7B7")
-                effAn.isSnoozed -> Color.parseColor("#93C5FD")
-                else -> levelColor(effAn.level)
+        // Android tile
+        when {
+            !effAn.isActive -> {
+                txtAndroidLevel.text = "待機中"
+                txtAndroidLevel.setTextColor(Color.parseColor("#6EE7B7"))
+                txtAndroidSub.text = "通常利用OK"
             }
-        )
+            effAn.isSnoozed -> {
+                txtAndroidLevel.text = "一時許可中"
+                txtAndroidLevel.setTextColor(Color.parseColor("#93C5FD"))
+                txtAndroidSub.text = "残り ${effAn.snoozeRemainingSeconds} 秒\n(元: Lv.${effAn.level})"
+            }
+            else -> {
+                txtAndroidLevel.text = "Lv.${effAn.level} 稼働中"
+                txtAndroidLevel.setTextColor(levelColor(effAn.level))
+                txtAndroidSub.text = "残り ${effAn.remainingText()}\n${effAn.reason}"
+            }
+        }
 
         btnEndSnooze.visibility = if (effAn.isSnoozed) View.VISIBLE else View.GONE
 
-        txtSyncStatus.text = "同期: ${repo.lastSyncMessage}"
+        txtSyncStatus.text = repo.lastSyncMessage
         txtSyncStatus.setTextColor(if (repo.lastSyncOk) Color.parseColor("#95A4BF") else Color.parseColor("#FCA5A5"))
 
         val locked = effPc.isHardLocked || effAn.isHardLocked
+        val lv2Active = !locked && ((effPc.isActive && effPc.level == 2) || (effAn.isActive && effAn.level == 2))
         btnStopManual.isEnabled = !locked
         btnStopManual.alpha = if (locked) 0.45f else 1.0f
-        btnStopManual.text = if (locked) "Lv.3 ハードロック中（停止不可）" else "手動ブロックを停止"
+        btnStopManual.text = when {
+            locked -> "Lv.3 ハードロック中（停止不可）"
+            lv2Active -> "手動ブロックを停止（確認入力）"
+            else -> "手動ブロックを停止"
+        }
 
         renderSchedules(st)
     }
@@ -403,13 +538,14 @@ class MainActivity : AppCompatActivity() {
         }
         for (rule in st.schedules) {
             val row = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
                 background = GradientDrawable().apply {
                     setColor(Color.parseColor("#111722"))
                     cornerRadius = dp(10).toFloat()
                     setStroke(dp(1), Color.parseColor("#243045"))
                 }
-                setPadding(dp(12), dp(10), dp(12), dp(10))
+                setPadding(dp(12), dp(10), dp(10), dp(10))
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
@@ -420,40 +556,42 @@ class MainActivity : AppCompatActivity() {
             val daysStr = if (rule.days.size == 7) "毎日"
             else rule.days.sorted().filter { it in 0..6 }.joinToString("") { dayLabels[it] }
             val targetStr = when (rule.target) {
-                "pc" -> "PCのみ"
-                "android" -> "スマホのみ"
+                "pc" -> "PC"
+                "android" -> "スマホ"
                 else -> "両方"
             }
 
-            val title = TextView(this).apply {
-                text = "${rule.name}  [Lv.${rule.level}]"
+            val info = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            info.addView(TextView(this).apply {
+                text = "${rule.name}  Lv.${rule.level}"
                 setTextColor(Color.WHITE)
-                textSize = 15f
+                textSize = 14f
                 setTypeface(null, Typeface.BOLD)
-            }
-            val meta = TextView(this).apply {
-                text = "${rule.startTime} - ${rule.endTime} / $daysStr / $targetStr"
+            })
+            info.addView(TextView(this).apply {
+                text = "${rule.startTime}-${rule.endTime} / $daysStr / $targetStr"
                 setTextColor(Color.parseColor("#95A4BF"))
-                textSize = 12f
-                setPadding(0, dp(2), 0, dp(8))
-            }
+                textSize = 11.5f
+            })
 
             val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
             val btnToggle = makeSmallButton(if (rule.enabled) "ON" else "OFF", if (rule.enabled) "#1F9D5D" else "#475569") {
                 val next = repo.getState().deepCopy()
                 next.schedules.find { it.id == rule.id }?.let { it.enabled = !it.enabled }
-                pushUpdatedState(next)
+                applyScheduleChangeWithLv2Check(next, "稼働中の Lv.2 スケジュールを OFF にします。")
             }
             val btnDel = makeSmallButton("削除", "#7F2933") {
                 val next = repo.getState().deepCopy()
                 next.schedules.removeAll { it.id == rule.id }
-                pushUpdatedState(next)
+                applyScheduleChangeWithLv2Check(next, "稼働中の Lv.2 スケジュールを削除します。")
             }
             actions.addView(btnToggle)
             actions.addView(btnDel)
 
-            row.addView(title)
-            row.addView(meta)
+            row.addView(info)
             row.addView(actions)
             scheduleContainer.addView(row)
         }
@@ -487,10 +625,83 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun stopManualSession() {
-        val next = repo.getState().deepCopy()
+        val cur = repo.getState()
+        val effPc = RuleEngine.evaluate(cur, "pc", 0L)
+        val effAn = RuleEngine.evaluate(cur, "android", 0L)
+        if (effPc.isHardLocked || effAn.isHardLocked) {
+            toast("Lv.3 ハードブロック中のため、終了時刻まで停止できません。")
+            return
+        }
+        val needsLv2 = (effPc.isActive && effPc.level == 2) || (effAn.isActive && effAn.level == 2)
+        if (needsLv2) {
+            showLv2ChallengeDialog("Lv.2 ブロックを停止するには下のフレーズを手入力してください：") {
+                val next = repo.getState().deepCopy()
+                next.manualSession.active = false
+                next.manualSession.expiresAt = 0L
+                pushUpdatedState(next, "手動ブロックを停止しました", lv2ChallengePassed = true)
+            }
+            return
+        }
+        val next = cur.deepCopy()
         next.manualSession.active = false
         next.manualSession.expiresAt = 0L
-        pushUpdatedState(next, "手動ブロックを停止しました")
+        pushUpdatedState(next, "手動ブロックを停止しました", lv2ChallengePassed = false)
+    }
+
+    private fun applyScheduleChangeWithLv2Check(proposed: GuardState, msg: String) {
+        val cur = repo.getState()
+        val errNo = RuleEngine.validateTransition(cur, proposed, lv2ChallengePassed = false)
+        if (errNo == null) {
+            pushUpdatedState(proposed, "スケジュールを更新しました", lv2ChallengePassed = false)
+            return
+        }
+        val errHard = RuleEngine.validateTransition(cur, proposed, lv2ChallengePassed = true)
+        if (errHard != null) {
+            toast(errHard)
+            return
+        }
+        showLv2ChallengeDialog(msg) {
+            pushUpdatedState(proposed, "スケジュールを更新しました", lv2ChallengePassed = true)
+        }
+    }
+
+    private fun showLv2ChallengeDialog(message: String, onSuccess: () -> Unit) {
+        val phrases = listOf("confirm stop focus", "choose mindful break", "unlock intentionally", "pause focus session")
+        val target = "${phrases.random()} ${(100..999).random()}"
+
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(14), dp(20), dp(8))
+        }
+        val lblMsg = TextView(this).apply { text = message; setPadding(0, 0, 0, dp(8)) }
+        val lblPhrase = TextView(this).apply {
+            text = target
+            textSize = 17f
+            typeface = Typeface.MONOSPACE
+            setTextColor(Color.parseColor("#FFAA6E"))
+            setPadding(0, dp(4), 0, dp(10))
+        }
+        val input = EditText(this).apply {
+            hint = "フレーズを入力..."
+            isLongClickable = false
+            setTextIsSelectable(false)
+        }
+        box.addView(lblMsg)
+        box.addView(lblPhrase)
+        box.addView(input)
+
+        AlertDialog.Builder(this)
+            .setTitle("Lv.2 確認フレーズ")
+            .setView(box)
+            .setPositiveButton("確認して実行") { _, _ ->
+                if (input.text.toString().trim() == target) {
+                    onSuccess()
+                } else {
+                    toast("フレーズが一致しませんでした")
+                }
+            }
+            .setNegativeButton("キャンセル", null)
+            .show()
     }
 
     private fun showAddScheduleDialog() {
@@ -562,9 +773,9 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun pushUpdatedState(next: GuardState, successToast: String = "更新しました") {
+    private fun pushUpdatedState(next: GuardState, successToast: String = "更新しました", lv2ChallengePassed: Boolean = false) {
         io.execute {
-            val (ok, err) = repo.updateState(next)
+            val (ok, err) = repo.updateState(next, lv2ChallengePassed)
             mainHandler.post {
                 refreshUiFromCache()
                 if (ok) toast(successToast) else toast(err ?: "更新できませんでした")
@@ -594,12 +805,35 @@ class MainActivity : AppCompatActivity() {
         else -> Color.parseColor("#6EE7B7")
     }
 
+    private fun makeDeviceTile(deviceTitle: String): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        background = GradientDrawable().apply {
+            setColor(Color.parseColor("#111722"))
+            cornerRadius = dp(10).toFloat()
+            setStroke(dp(1), Color.parseColor("#243045"))
+        }
+        setPadding(dp(12), dp(10), dp(12), dp(10))
+        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        addView(TextView(this@MainActivity).apply {
+            text = deviceTitle
+            textSize = 11.5f
+            setTextColor(Color.parseColor("#8FA0BE"))
+            setTypeface(null, Typeface.BOLD)
+        })
+    }
+
+    private fun makeSpinnerBg(): GradientDrawable = GradientDrawable().apply {
+        setColor(Color.parseColor("#111722"))
+        cornerRadius = dp(9).toFloat()
+        setStroke(dp(1), Color.parseColor("#2C3952"))
+    }
+
     private fun makeLevelBtn(label: String, lv: Int): Button = Button(this).apply {
         text = label
         isAllCaps = false
-        textSize = 13f
+        textSize = 13.5f
         setTypeface(null, Typeface.BOLD)
-        layoutParams = LinearLayout.LayoutParams(0, dp(58), 1f).apply {
+        layoutParams = LinearLayout.LayoutParams(0, dp(56), 1f).apply {
             marginEnd = if (lv < 3) dp(6) else 0
         }
         setOnClickListener {
@@ -615,32 +849,32 @@ class MainActivity : AppCompatActivity() {
             cornerRadius = dp(14).toFloat()
             setStroke(dp(1), Color.parseColor("#263147"))
         }
-        setPadding(dp(16), dp(14), dp(16), dp(14))
+        setPadding(dp(14), dp(12), dp(14), dp(14))
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { bottomMargin = dp(14) }
+        ).apply { bottomMargin = dp(12) }
     }
 
     private fun makeSectionTitle(t: String): TextView = TextView(this).apply {
         text = t
         setTextColor(Color.parseColor("#E2EAF7"))
-        textSize = 16f
+        textSize = 15f
         setTypeface(null, Typeface.BOLD)
-        setPadding(0, 0, 0, dp(10))
+        setPadding(0, 0, 0, dp(8))
     }
 
     private fun makeLabel(t: String): TextView = TextView(this).apply {
         text = t
         setTextColor(Color.parseColor("#95A4BF"))
-        textSize = 12f
-        setPadding(0, dp(8), 0, dp(4))
+        textSize = 11.5f
+        setPadding(0, dp(4), 0, dp(4))
     }
 
     private fun makeSubText(t: String): TextView = TextView(this).apply {
         text = t
         setTextColor(Color.parseColor("#95A4BF"))
-        textSize = 12.5f
+        textSize = 12f
         setPadding(0, dp(2), 0, dp(6))
     }
 
@@ -681,16 +915,16 @@ class MainActivity : AppCompatActivity() {
         text = label
         isAllCaps = false
         setTextColor(Color.WHITE)
-        textSize = 12f
+        textSize = 11.5f
         background = GradientDrawable().apply {
             setColor(Color.parseColor(hexBg))
             cornerRadius = dp(8).toFloat()
         }
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT,
-            dp(36)
-        ).apply { marginEnd = dp(8) }
-        setPadding(dp(14), 0, dp(14), 0)
+            dp(34)
+        ).apply { marginStart = dp(6) }
+        setPadding(dp(10), 0, dp(10), 0)
         setOnClickListener { onClick() }
     }
 

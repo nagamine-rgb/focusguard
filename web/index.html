@@ -490,15 +490,48 @@
       return `${s}秒`;
     }
 
-    function wouldWeakenHardLock(cur, next) {
+    function isShortened(curEndsAt, nextEndsAt) {
+      if (!curEndsAt && nextEndsAt) return true;
+      if (curEndsAt && nextEndsAt && nextEndsAt + 5000 < curEndsAt) return true;
+      return false;
+    }
+
+    function validateTransition(cur, next, lv2ChallengePassed = false) {
       for (const dev of ["pc", "android"]) {
         const a = evaluateDevice(cur, dev);
+        const b = evaluateDevice(next, dev);
         if (a.active && a.level >= 3) {
-          const b = evaluateDevice(next, dev);
-          if (!b.active || b.level < 3) return true;
+          if (!b.active || b.level < 3) {
+            return "Lv.3 ハードブロック中のため、終了時刻まで解除・引き下げはできません。";
+          }
+          if (isShortened(a.endsAt, b.endsAt)) {
+            return "Lv.3 ハードブロック中のため、残り時間を短縮することはできません。";
+          }
+        } else if (a.active && a.level === 2 && !lv2ChallengePassed) {
+          if (!b.active) {
+            return "Lv.2 ブロックを停止するには確認フレーズの入力が必要です。";
+          }
+          if (b.level < 2) {
+            return "Lv.2 稼働中は Lv.1 へ引き下げできません（解除するには「停止」から確認フレーズを入力してください）。";
+          }
+          if (b.level === 2 && isShortened(a.endsAt, b.endsAt)) {
+            return "Lv.2 稼働中は残り時間を短縮できません（延長や Lv.3 への強化は可能です）。";
+          }
         }
       }
-      return false;
+      return null;
+    }
+
+    function promptLv2Challenge(msg) {
+      const phrases = ["confirm stop focus", "choose mindful break", "unlock intentionally", "pause focus session"];
+      const phrase = phrases[Math.floor(Math.random() * phrases.length)] + " " + (100 + Math.floor(Math.random() * 900));
+      const typed = prompt(`${msg}\n\n次のフレーズを正確に入力してください:\n${phrase}`);
+      if (typed === null) return false;
+      if (typed.trim() !== phrase) {
+        showAlert("フレーズが一致しませんでした。", "err");
+        return false;
+      }
+      return true;
     }
 
     async function fetchState() {
@@ -538,9 +571,10 @@
       }
     }
 
-    async function pushState(nextState) {
-      if (wouldWeakenHardLock(currentState, nextState)) {
-        showAlert("Lv.3 ハードブロック中のため、終了時刻まで解除・引き下げはできません。", "err");
+    async function pushState(nextState, lv2ChallengePassed = false) {
+      const blockErr = validateTransition(currentState, nextState, lv2ChallengePassed);
+      if (blockErr) {
+        showAlert(blockErr, "err");
         return false;
       }
       nextState.updatedAt = Date.now();
@@ -548,7 +582,8 @@
 
       try {
         if (mode === "local") {
-          const res = await fetch("/api/state", {
+          const apiUrl = lv2ChallengePassed ? "/api/state?lv2verified=1" : "/api/state";
+          const res = await fetch(apiUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(nextState)
@@ -661,10 +696,22 @@
     }
 
     async function stopManual() {
+      const pc = evaluateDevice(currentState, "pc");
+      const an = evaluateDevice(currentState, "android");
+      if ((pc.active && pc.level >= 3) || (an.active && an.level >= 3)) {
+        showAlert("Lv.3 ハードブロック中のため、終了時刻まで停止できません。", "err");
+        return;
+      }
+      const needsLv2 = (pc.active && pc.level === 2) || (an.active && an.level === 2);
+      let passed = false;
+      if (needsLv2) {
+        passed = promptLv2Challenge("Lv.2 ブロックを停止します。");
+        if (!passed) return;
+      }
       const next = JSON.parse(JSON.stringify(currentState));
       next.manualSession.active = false;
       next.manualSession.expiresAt = 0;
-      await pushState(next);
+      await pushState(next, passed);
     }
 
     async function addSchedule() {
@@ -684,7 +731,7 @@
         level: Number(document.getElementById("inSchedLv").value),
         target: document.getElementById("inSchedTarget").value
       });
-      await pushState(next);
+      await pushState(next, false);
     }
 
     async function toggleSched(id) {
@@ -692,13 +739,25 @@
       const item = (next.schedules || []).find(s => s.id === id);
       if (!item) return;
       item.enabled = !item.enabled;
-      await pushState(next);
+      const errNoChallenge = validateTransition(currentState, next, false);
+      if (errNoChallenge && !validateTransition(currentState, next, true)) {
+        if (!promptLv2Challenge("稼働中の Lv.2 スケジュールを OFF にします。")) return;
+        await pushState(next, true);
+        return;
+      }
+      await pushState(next, false);
     }
 
     async function deleteSched(id) {
       const next = JSON.parse(JSON.stringify(currentState));
       next.schedules = (next.schedules || []).filter(s => s.id !== id);
-      await pushState(next);
+      const errNoChallenge = validateTransition(currentState, next, false);
+      if (errNoChallenge && !validateTransition(currentState, next, true)) {
+        if (!promptLv2Challenge("稼働中の Lv.2 スケジュールを削除します。")) return;
+        await pushState(next, true);
+        return;
+      }
+      await pushState(next, false);
     }
 
     function saveConnConfig() {
