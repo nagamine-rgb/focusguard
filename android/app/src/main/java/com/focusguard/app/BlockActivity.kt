@@ -21,21 +21,11 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
-import kotlin.random.Random
 
 class BlockActivity : AppCompatActivity() {
 
     private var timer: CountDownTimer? = null
     private lateinit var repo: SyncRepository
-
-    private val phrases = listOf(
-        "focus over impulse",
-        "choose calm over scroll",
-        "protect my attention",
-        "pause and breathe first",
-        "stay on my real goal",
-        "mindful screen time"
-    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -193,10 +183,10 @@ class BlockActivity : AppCompatActivity() {
                 }
             }.start()
         } else {
-            val targetPhrase = "${phrases[Random.nextInt(phrases.size)]} ${Random.nextInt(100, 999)}"
+            val targetQuote = Quotes.pick()
 
             val lblGuide = TextView(this).apply {
-                text = "一時的に使うには、下のフレーズを手入力してください（貼付不可）："
+                text = "どうしても今使うなら、下の言葉を手で入力してください（貼り付けはできません）："
                 setTextColor(Color.parseColor("#D9E2F2"))
                 textSize = 13f
                 setPadding(0, 0, 0, dp(8))
@@ -204,11 +194,12 @@ class BlockActivity : AppCompatActivity() {
             card.addView(lblGuide)
 
             val lblPhrase = TextView(this).apply {
-                text = targetPhrase
-                setTextColor(Color.parseColor("#FFAA6E"))
-                textSize = 18f
-                typeface = Typeface.MONOSPACE
-                gravity = Gravity.CENTER
+                text = targetQuote.text
+                setTextColor(Color.parseColor("#FFBE8C"))
+                textSize = 17f
+                setTypeface(null, Typeface.BOLD)
+                setLineSpacing(0f, 1.25f)
+                gravity = Gravity.START
                 background = GradientDrawable().apply {
                     setColor(Color.parseColor("#101520"))
                     cornerRadius = dp(10).toFloat()
@@ -217,12 +208,21 @@ class BlockActivity : AppCompatActivity() {
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { bottomMargin = dp(10) }
+                ).apply { bottomMargin = dp(4) }
             }
             card.addView(lblPhrase)
 
+            val lblAuthor = TextView(this).apply {
+                text = "— ${targetQuote.author}"
+                setTextColor(Color.parseColor("#9BA8C2"))
+                textSize = 12f
+                gravity = Gravity.END
+                setPadding(0, 0, 0, dp(10))
+            }
+            card.addView(lblAuthor)
+
             val lblHint = TextView(this).apply {
-                text = "正確に入力してください"
+                text = Quotes.progress("", targetQuote)
                 setTextColor(Color.parseColor("#9BA8C2"))
                 textSize = 12f
                 setPadding(0, dp(4), 0, dp(14))
@@ -233,8 +233,8 @@ class BlockActivity : AppCompatActivity() {
                 setHintTextColor(Color.parseColor("#6B7791"))
                 setTextColor(Color.WHITE)
                 textSize = 16f
-                typeface = Typeface.MONOSPACE
-                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                // 日本語入力の変換候補が出るよう NO_SUGGESTIONS は付けない
+                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
                 isLongClickable = false
                 setTextIsSelectable(false)
                 customSelectionActionModeCallback = object : ActionMode.Callback {
@@ -253,10 +253,10 @@ class BlockActivity : AppCompatActivity() {
                     override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                     override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
                     override fun afterTextChanged(s: Editable?) {
-                        val ok = s?.toString()?.trim() == targetPhrase
+                        val ok = Quotes.matches(s?.toString(), targetQuote)
                         btnAllow.isEnabled = ok
                         btnAllow.setTextColor(if (ok) Color.WHITE else Color.parseColor("#8D99B2"))
-                        lblHint.text = if (ok) "一致しました！一時許可できます。" else "正確に入力してください"
+                        lblHint.text = Quotes.progress(s?.toString(), targetQuote)
                         lblHint.setTextColor(if (ok) Color.parseColor("#7AE3A8") else Color.parseColor("#9BA8C2"))
                     }
                 })
@@ -264,7 +264,7 @@ class BlockActivity : AppCompatActivity() {
             card.addView(input)
             card.addView(lblHint)
 
-            btnAllow.text = "フレーズを入力して ${allowMin}分だけ許可"
+            btnAllow.text = "入力が一致したら ${allowMin}分だけ許可"
         }
 
         // Primary recommended action: close browser (go home)

@@ -793,8 +793,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showLv2ChallengeDialog(message: String, onSuccess: () -> Unit) {
-        val phrases = listOf("confirm stop focus", "choose mindful break", "unlock intentionally", "pause focus session")
-        val target = "${phrases.random()} ${(100..999).random()}"
+        val target = Quotes.pick()
 
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -802,29 +801,56 @@ class MainActivity : AppCompatActivity() {
         }
         val lblMsg = TextView(this).apply { text = message; setPadding(0, 0, 0, dp(8)) }
         val lblPhrase = TextView(this).apply {
-            text = target
-            textSize = 17f
-            typeface = Typeface.MONOSPACE
-            setTextColor(Color.parseColor("#FFAA6E"))
-            setPadding(0, dp(4), 0, dp(10))
+            text = target.text
+            textSize = 16f
+            setTypeface(null, Typeface.BOLD)
+            setLineSpacing(0f, 1.25f)
+            setTextColor(Color.parseColor("#E0763C"))
+            setPadding(0, dp(4), 0, dp(2))
+        }
+        val lblAuthor = TextView(this).apply {
+            text = "— ${target.author}"
+            textSize = 12f
+            gravity = Gravity.END
+            setPadding(0, 0, 0, dp(8))
+        }
+        val lblHint = TextView(this).apply {
+            text = Quotes.progress("", target)
+            textSize = 12f
+            setPadding(0, dp(4), 0, 0)
         }
         val input = EditText(this).apply {
-            hint = "フレーズを入力..."
+            hint = "上の言葉を入力（貼り付け不可）"
             isLongClickable = false
             setTextIsSelectable(false)
+            customSelectionActionModeCallback = object : android.view.ActionMode.Callback {
+                override fun onCreateActionMode(mode: android.view.ActionMode?, menu: android.view.Menu?) = false
+                override fun onPrepareActionMode(mode: android.view.ActionMode?, menu: android.view.Menu?) = false
+                override fun onActionItemClicked(mode: android.view.ActionMode?, item: android.view.MenuItem?) = false
+                override fun onDestroyActionMode(mode: android.view.ActionMode?) {}
+            }
+            addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                override fun afterTextChanged(s: android.text.Editable?) {
+                    lblHint.text = Quotes.progress(s?.toString(), target)
+                }
+            })
         }
         box.addView(lblMsg)
         box.addView(lblPhrase)
+        box.addView(lblAuthor)
         box.addView(input)
+        box.addView(lblHint)
 
         AlertDialog.Builder(this)
-            .setTitle("Lv.2 確認フレーズ")
+            .setTitle("Lv.2 確認")
             .setView(box)
             .setPositiveButton("確認して実行") { _, _ ->
-                if (input.text.toString().trim() == target) {
+                if (Quotes.matches(input.text.toString(), target)) {
                     onSuccess()
                 } else {
-                    toast("フレーズが一致しませんでした")
+                    toast("入力が一致しませんでした")
                 }
             }
             .setNegativeButton("キャンセル", null)

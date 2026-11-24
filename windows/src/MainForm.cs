@@ -57,15 +57,6 @@ namespace FocusGuard
         private readonly Color _textMain = Color.FromArgb(238, 242, 248);
         private readonly Color _textSub = Color.FromArgb(156, 168, 190);
 
-        private static readonly string[] ChallengePhrases = new[]
-        {
-            "confirm stop focus",
-            "choose mindful break",
-            "unlock intentionally",
-            "verify my real need",
-            "pause focus session"
-        };
-
         public MainForm(SyncService sync, Action requestQuit)
         {
             _sync = sync;
@@ -94,13 +85,12 @@ namespace FocusGuard
 
         public static bool PromptLv2Challenge(string titleMessage)
         {
-            var rnd = new Random();
-            string phrase = ChallengePhrases[rnd.Next(ChallengePhrases.Length)] + " " + rnd.Next(100, 999);
+            Quote quote = Quotes.Pick();
 
             using (var dlg = new Form())
             {
-                dlg.Text = "Lv.2 確認フレーズ入力";
-                dlg.Size = new Size(460, 260);
+                dlg.Text = "Lv.2 確認";
+                dlg.Size = new Size(500, 380);
                 dlg.FormBorderStyle = FormBorderStyle.FixedDialog;
                 dlg.StartPosition = FormStartPosition.CenterParent;
                 dlg.MaximizeBox = false;
@@ -113,28 +103,47 @@ namespace FocusGuard
                 {
                     Text = titleMessage,
                     Location = new Point(20, 16),
-                    Size = new Size(404, 38),
+                    Size = new Size(444, 38),
                     ForeColor = Color.FromArgb(225, 232, 245)
                 };
                 var lblPhrase = new Label
                 {
-                    Text = phrase,
-                    Font = new Font("Consolas", 13.5f, FontStyle.Bold),
-                    ForeColor = Color.FromArgb(255, 170, 110),
+                    Text = quote.Text,
+                    Font = new Font("Meiryo UI", 12f, FontStyle.Bold),
+                    ForeColor = Color.FromArgb(255, 190, 140),
                     BackColor = Color.FromArgb(14, 18, 26),
-                    TextAlign = ContentAlignment.MiddleCenter,
+                    TextAlign = ContentAlignment.MiddleLeft,
+                    Padding = new Padding(10, 4, 10, 4),
                     Location = new Point(20, 60),
-                    Size = new Size(404, 36)
+                    Size = new Size(444, 92)
+                };
+                var lblAuthor = new Label
+                {
+                    Text = "— " + quote.Author,
+                    Font = new Font("Meiryo UI", 8.5f),
+                    ForeColor = Color.FromArgb(156, 168, 190),
+                    TextAlign = ContentAlignment.MiddleRight,
+                    Location = new Point(20, 154),
+                    Size = new Size(444, 20)
+                };
+                var lblHint = new Label
+                {
+                    Text = Quotes.Progress("", quote),
+                    Font = new Font("Meiryo UI", 8.5f),
+                    ForeColor = Color.FromArgb(156, 168, 190),
+                    Location = new Point(20, 216),
+                    Size = new Size(444, 20)
                 };
                 var txt = new TextBox
                 {
-                    Font = new Font("Consolas", 12f),
+                    Font = new Font("Meiryo UI", 11.5f),
                     BackColor = Color.FromArgb(34, 42, 58),
                     ForeColor = Color.White,
                     BorderStyle = BorderStyle.FixedSingle,
-                    Location = new Point(20, 108),
-                    Size = new Size(404, 30),
-                    ShortcutsEnabled = false
+                    Location = new Point(20, 182),
+                    Size = new Size(444, 30),
+                    ShortcutsEnabled = false,
+                    ImeMode = ImeMode.On
                 };
                 txt.KeyDown += (s, e) =>
                 {
@@ -146,7 +155,7 @@ namespace FocusGuard
                 {
                     Text = "確認して実行",
                     Enabled = false,
-                    Location = new Point(196, 158),
+                    Location = new Point(236, 252),
                     Size = new Size(126, 36),
                     BackColor = Color.FromArgb(200, 90, 52),
                     ForeColor = Color.White,
@@ -158,7 +167,7 @@ namespace FocusGuard
                 var btnCancel = new Button
                 {
                     Text = "キャンセル",
-                    Location = new Point(332, 158),
+                    Location = new Point(372, 252),
                     Size = new Size(92, 36),
                     BackColor = Color.FromArgb(56, 66, 84),
                     ForeColor = Color.White,
@@ -169,10 +178,12 @@ namespace FocusGuard
 
                 txt.TextChanged += (s, e) =>
                 {
-                    btnOk.Enabled = string.Equals(txt.Text.Trim(), phrase, StringComparison.Ordinal);
+                    btnOk.Enabled = Quotes.Matches(txt.Text, quote);
+                    lblHint.Text = Quotes.Progress(txt.Text, quote);
+                    lblHint.ForeColor = btnOk.Enabled ? Color.FromArgb(110, 220, 150) : Color.FromArgb(156, 168, 190);
                 };
 
-                dlg.Controls.AddRange(new Control[] { lblMsg, lblPhrase, txt, btnOk, btnCancel });
+                dlg.Controls.AddRange(new Control[] { lblMsg, lblPhrase, lblAuthor, txt, lblHint, btnOk, btnCancel });
                 dlg.AcceptButton = btnOk;
                 dlg.CancelButton = btnCancel;
                 return dlg.ShowDialog() == DialogResult.OK;
