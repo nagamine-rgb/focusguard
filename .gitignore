@@ -20,3 +20,7 @@ android/local.properties
 Thumbs.db
 .vs/
 .vscode/
+
+# Python
+__pycache__/
+*.pyc
