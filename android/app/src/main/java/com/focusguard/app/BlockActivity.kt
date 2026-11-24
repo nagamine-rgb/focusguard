@@ -63,7 +63,8 @@ class BlockActivity : AppCompatActivity() {
         val level = intent.getIntExtra("level", 1)
         val reason = intent.getStringExtra("reason") ?: "集中モード"
         val remaining = intent.getStringExtra("remaining") ?: "—"
-        val browserPkg = intent.getStringExtra("browserPkg") ?: "browser"
+        val browserPkg = intent.getStringExtra("browserPkg") ?: "app"
+        val appLabel = intent.getStringExtra("appLabel")?.ifBlank { browserPkg } ?: browserPkg
         val lv1WaitSec = intent.getIntExtra("lv1WaitSec", 15).coerceAtLeast(3)
         val lv1AllowMin = intent.getIntExtra("lv1AllowMin", 5).coerceAtLeast(1)
         val lv2AllowMin = intent.getIntExtra("lv2AllowMin", 10).coerceAtLeast(1)
@@ -111,9 +112,9 @@ class BlockActivity : AppCompatActivity() {
 
         val title = TextView(this).apply {
             text = if (level == 1) {
-                "ちょっと待って。\n本当に今ブラウザが必要？"
+                "ちょっと待って。\n本当に今「$appLabel」が必要？"
             } else {
-                "集中モード中です。\n無意識のブラウザ起動を止めました。"
+                "集中モード中です。\n「$appLabel」の起動を止めました。"
             }
             setTextColor(Color.WHITE)
             textSize = 20f
@@ -123,7 +124,7 @@ class BlockActivity : AppCompatActivity() {
         card.addView(title)
 
         val meta = TextView(this).apply {
-            text = "理由: $reason  /  残り: $remaining\n対象アプリ: $browserPkg"
+            text = "理由: $reason  /  残り: $remaining\n対象アプリ: $appLabel ($browserPkg)"
             setTextColor(Color.parseColor("#9BA8C2"))
             textSize = 13f
             setPadding(0, 0, 0, dp(18))
@@ -188,7 +189,7 @@ class BlockActivity : AppCompatActivity() {
                     lblCountdown.setTextColor(Color.parseColor("#7AE3A8"))
                     btnAllow.isEnabled = true
                     btnAllow.setTextColor(Color.WHITE)
-                    btnAllow.text = "${allowMin}分だけブラウザを許可する"
+                    btnAllow.text = "${allowMin}分だけアプリを許可する"
                 }
             }.start()
         } else {

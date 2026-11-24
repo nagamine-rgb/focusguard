@@ -304,6 +304,27 @@
       </details>
     </div>
 
+    <!-- ブロック対象アプリカード -->
+    <div class="card">
+      <details>
+        <summary>ブロック対象アプリ一覧（ブラウザ・ゲーム・SNS）</summary>
+        <div style="margin-top:12px;">
+          <p class="muted" style="margin-top:0;">
+            スマホのゲームや SNS は Android アプリの「ブロックするアプリを選ぶ」から名前で簡単に選べます。ここからも直接追加・確認できます。
+          </p>
+          <div style="margin-bottom:10px;">
+            <label class="field">Windows PC 対象プロセス（カンマ区切り）</label>
+            <input id="inWinTargets" type="text" placeholder="chrome, msedge, steam, discord" />
+          </div>
+          <div style="margin-bottom:10px;">
+            <label class="field">Android 対象パッケージ（カンマ区切り）</label>
+            <input id="inAndTargets" type="text" placeholder="com.android.chrome, ..." />
+          </div>
+          <button class="btn btn-primary" style="width:100%;" onclick="saveTargetApps()">ブロック対象アプリを保存</button>
+        </div>
+      </details>
+    </div>
+
     <!-- Supabase 接続設定カード -->
     <div id="connCard" class="card">
       <h2>接続設定（ローカル / Supabase）</h2>
@@ -496,6 +517,12 @@
       return false;
     }
 
+    function removedAnyTarget(cur, next, dev) {
+      const curList = (dev === "pc" ? cur?.browsers?.windows : cur?.browsers?.android) || [];
+      const nextSet = new Set(((dev === "pc" ? next?.browsers?.windows : next?.browsers?.android) || []).map(x => String(x).trim().toLowerCase()));
+      return curList.some(x => x && !nextSet.has(String(x).trim().toLowerCase()));
+    }
+
     function validateTransition(cur, next, lv2ChallengePassed = false) {
       for (const dev of ["pc", "android"]) {
         const a = evaluateDevice(cur, dev);
@@ -507,6 +534,9 @@
           if (isShortened(a.endsAt, b.endsAt)) {
             return "Lv.3 ハードブロック中のため、残り時間を短縮することはできません。";
           }
+          if (removedAnyTarget(cur, next, dev)) {
+            return "Lv.3 ハードブロック中のため、ブロック対象アプリを外すことはできません（追加は可能です）。";
+          }
         } else if (a.active && a.level === 2 && !lv2ChallengePassed) {
           if (!b.active) {
             return "Lv.2 ブロックを停止するには確認フレーズの入力が必要です。";
@@ -516,6 +546,9 @@
           }
           if (b.level === 2 && isShortened(a.endsAt, b.endsAt)) {
             return "Lv.2 稼働中は残り時間を短縮できません（延長や Lv.3 への強化は可能です）。";
+          }
+          if (removedAnyTarget(cur, next, dev)) {
+            return "Lv.2 稼働中にブロック対象アプリを外すには確認フレーズの入力が必要です（追加はそのまま可能です）。";
           }
         }
       }
@@ -670,6 +703,34 @@
           list.appendChild(div);
         });
       }
+
+      const winIn = document.getElementById("inWinTargets");
+      const andIn = document.getElementById("inAndTargets");
+      if (winIn && document.activeElement !== winIn) {
+        winIn.value = (currentState.browsers?.windows || []).join(", ");
+      }
+      if (andIn && document.activeElement !== andIn) {
+        andIn.value = (currentState.browsers?.android || []).join(", ");
+      }
+    }
+
+    async function saveTargetApps() {
+      const parseList = (v) => v.split(/[,;\n]/).map(s => s.trim()).filter(Boolean);
+      const winList = parseList(document.getElementById("inWinTargets").value);
+      const andList = parseList(document.getElementById("inAndTargets").value);
+      if (winList.length === 0 || andList.length === 0) {
+        showAlert("PC・Android それぞれ 1 件以上の対象アプリを残してください。", "err");
+        return;
+      }
+      const next = JSON.parse(JSON.stringify(currentState));
+      next.browsers = { windows: winList, android: andList };
+      const errNo = validateTransition(currentState, next, false);
+      if (errNo && !validateTransition(currentState, next, true)) {
+        if (!promptLv2Challenge("Lv.2 稼働中にブロック対象アプリを外します。")) return;
+        await pushState(next, true);
+        return;
+      }
+      await pushState(next, false);
     }
 
     function escapeHtml(s) {

@@ -716,28 +716,53 @@ namespace FocusGuard
                 _btnTestSupabase, _btnCopyMobileLink, _btnOpenWebUi
             });
 
-            var behCard = new Panel { Location = new Point(16, 248), Size = new Size(632, 190), BackColor = _cardBg };
+            var behCard = new Panel { Location = new Point(16, 248), Size = new Size(632, 232), BackColor = _cardBg };
             scroll.Controls.Add(behCard);
 
-            AddSectionHeader(behCard, "監視対象ブラウザ・摩擦パラメータ・自動起動", 16, 12);
+            AddSectionHeader(behCard, "ブロック対象アプリ（ブラウザ・ゲーム・その他）・摩擦パラメータ", 16, 12);
 
-            behCard.Controls.Add(new Label { Text = "対象プロセス (カンマ区切り):", ForeColor = _textSub, Location = new Point(18, 44), AutoSize = true });
-            _txtBrowsers = new TextBox { Location = new Point(18, 64), Size = new Size(594, 24) };
+            behCard.Controls.Add(new Label { Text = "対象プロセス名 (カンマ区切り):", ForeColor = _textSub, Location = new Point(18, 42), AutoSize = true });
+            _txtBrowsers = new TextBox { Location = new Point(18, 62), Size = new Size(594, 24) };
             behCard.Controls.Add(_txtBrowsers);
 
-            behCard.Controls.Add(new Label { Text = "Lv.1 待機(秒):", ForeColor = _textSub, Location = new Point(18, 102), AutoSize = true });
-            _numLv1Wait = new NumericUpDown { Minimum = 3, Maximum = 120, Value = 15, Location = new Point(122, 99), Size = new Size(65, 24) };
+            var btnPickRunning = new Button
+            {
+                Text = "起動中のアプリから選んで追加...",
+                Location = new Point(18, 92),
+                Size = new Size(235, 28),
+                BackColor = Color.FromArgb(46, 98, 168),
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat
+            };
+            btnPickRunning.FlatAppearance.BorderSize = 0;
+            btnPickRunning.Click += OnPickRunningApps;
 
-            behCard.Controls.Add(new Label { Text = "Lv.1 許可(分):", ForeColor = _textSub, Location = new Point(206, 102), AutoSize = true });
-            _numLv1Allow = new NumericUpDown { Minimum = 1, Maximum = 60, Value = 5, Location = new Point(310, 99), Size = new Size(65, 24) };
+            var btnAddGamePreset = new Button
+            {
+                Text = "定番ゲーム・SNS追加 (Steam/Discord/Epic)",
+                Location = new Point(264, 92),
+                Size = new Size(270, 28),
+                BackColor = Color.FromArgb(56, 72, 98),
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat
+            };
+            btnAddGamePreset.FlatAppearance.BorderSize = 0;
+            btnAddGamePreset.Click += OnAddGamePresets;
+            behCard.Controls.AddRange(new Control[] { btnPickRunning, btnAddGamePreset });
 
-            behCard.Controls.Add(new Label { Text = "Lv.2 許可(分):", ForeColor = _textSub, Location = new Point(394, 102), AutoSize = true });
-            _numLv2Allow = new NumericUpDown { Minimum = 1, Maximum = 60, Value = 10, Location = new Point(498, 99), Size = new Size(65, 24) };
+            behCard.Controls.Add(new Label { Text = "Lv.1 待機(秒):", ForeColor = _textSub, Location = new Point(18, 134), AutoSize = true });
+            _numLv1Wait = new NumericUpDown { Minimum = 3, Maximum = 120, Value = 15, Location = new Point(122, 131), Size = new Size(65, 24) };
+
+            behCard.Controls.Add(new Label { Text = "Lv.1 許可(分):", ForeColor = _textSub, Location = new Point(206, 134), AutoSize = true });
+            _numLv1Allow = new NumericUpDown { Minimum = 1, Maximum = 60, Value = 5, Location = new Point(310, 131), Size = new Size(65, 24) };
+
+            behCard.Controls.Add(new Label { Text = "Lv.2 許可(分):", ForeColor = _textSub, Location = new Point(394, 134), AutoSize = true });
+            _numLv2Allow = new NumericUpDown { Minimum = 1, Maximum = 60, Value = 10, Location = new Point(498, 131), Size = new Size(65, 24) };
 
             _chkStartup = new CheckBox
             {
                 Text = "Windows 起動時に FocusGuard を自動起動する",
-                Location = new Point(18, 138),
+                Location = new Point(18, 174),
                 Size = new Size(340, 26),
                 ForeColor = _textMain
             };
@@ -745,7 +770,7 @@ namespace FocusGuard
             _btnSaveSettings = new Button
             {
                 Text = "設定をすべて保存",
-                Location = new Point(432, 134),
+                Location = new Point(432, 170),
                 Size = new Size(180, 36),
                 BackColor = Color.FromArgb(52, 116, 235),
                 ForeColor = Color.White,
@@ -999,6 +1024,128 @@ namespace FocusGuard
                 "コピー完了", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
+        private void OnPickRunningApps(object sender, EventArgs e)
+        {
+            var excluded = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "focusguard", "explorer", "applicationframehost", "textinputhost",
+                "systemsettings", "shellexperiencehost", "searchhost", "taskmgr"
+            };
+
+            var running = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var p in Process.GetProcesses())
+            {
+                try
+                {
+                    if (p.MainWindowHandle == IntPtr.Zero) continue;
+                    string name = p.ProcessName;
+                    if (string.IsNullOrWhiteSpace(name) || excluded.Contains(name)) continue;
+                    string title = string.IsNullOrWhiteSpace(p.MainWindowTitle) ? name : p.MainWindowTitle;
+                    if (title.Length > 42) title = title.Substring(0, 42) + "...";
+                    if (!running.ContainsKey(name))
+                        running[name] = string.Format("{0}  ({1})", name, title);
+                }
+                catch { }
+            }
+
+            if (running.Count == 0)
+            {
+                MessageBox.Show("現在ウィンドウが開いている対象候補アプリが見つかりませんでした。\r\n追加したいゲームやアプリを一度起動してから押してください。",
+                    "起動中アプリなし", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            using (var dlg = new Form())
+            {
+                dlg.Text = "起動中のアプリからブロック対象を追加";
+                dlg.Size = new Size(460, 400);
+                dlg.StartPosition = FormStartPosition.CenterParent;
+                dlg.BackColor = Color.FromArgb(22, 27, 37);
+                dlg.ForeColor = Color.White;
+                dlg.Font = new Font("Meiryo UI", 9.5f);
+
+                var lbl = new Label
+                {
+                    Text = "ブロック対象に追加したいアプリにチェックを入れてください:",
+                    Location = new Point(16, 12),
+                    Size = new Size(410, 24)
+                };
+
+                var clb = new CheckedListBox
+                {
+                    Location = new Point(16, 40),
+                    Size = new Size(412, 265),
+                    BackColor = Color.FromArgb(30, 38, 52),
+                    ForeColor = Color.White,
+                    CheckOnClick = true
+                };
+
+                var existingSet = new HashSet<string>(
+                    _txtBrowsers.Text.Split(new[] { ',', ';', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                        .Select(x => x.Trim().ToLowerInvariant()),
+                    StringComparer.OrdinalIgnoreCase);
+
+                var keys = running.Keys.OrderBy(k => k).ToList();
+                foreach (var k in keys)
+                {
+                    int idx = clb.Items.Add(running[k]);
+                    if (existingSet.Contains(k)) clb.SetItemChecked(idx, true);
+                }
+
+                var btnAdd = new Button
+                {
+                    Text = "選択したアプリを追加",
+                    Location = new Point(190, 316),
+                    Size = new Size(146, 34),
+                    BackColor = Color.FromArgb(46, 138, 92),
+                    ForeColor = Color.White,
+                    FlatStyle = FlatStyle.Flat,
+                    DialogResult = DialogResult.OK
+                };
+                btnAdd.FlatAppearance.BorderSize = 0;
+
+                var btnCancel = new Button
+                {
+                    Text = "キャンセル",
+                    Location = new Point(344, 316),
+                    Size = new Size(84, 34),
+                    BackColor = Color.FromArgb(62, 70, 88),
+                    ForeColor = Color.White,
+                    FlatStyle = FlatStyle.Flat,
+                    DialogResult = DialogResult.Cancel
+                };
+                btnCancel.FlatAppearance.BorderSize = 0;
+
+                dlg.Controls.AddRange(new Control[] { lbl, clb, btnAdd, btnCancel });
+                if (dlg.ShowDialog(this) == DialogResult.OK)
+                {
+                    for (int i = 0; i < keys.Count; i++)
+                    {
+                        if (clb.GetItemChecked(i))
+                            existingSet.Add(keys[i].ToLowerInvariant());
+                    }
+                    _txtBrowsers.Text = string.Join(", ", existingSet);
+                    MessageBox.Show("リストに追加しました！最後に下の「設定をすべて保存」を押すと反映・同期されます。",
+                        "追加完了", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+            }
+        }
+
+        private void OnAddGamePresets(object sender, EventArgs e)
+        {
+            var existing = new HashSet<string>(
+                _txtBrowsers.Text.Split(new[] { ',', ';', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(x => x.Trim().ToLowerInvariant()),
+                StringComparer.OrdinalIgnoreCase);
+            foreach (var preset in new[] { "steam", "discord", "epicgameslauncher", "riotclientux" })
+            {
+                existing.Add(preset);
+            }
+            _txtBrowsers.Text = string.Join(", ", existing);
+            MessageBox.Show("Steam / Discord / Epic Games / Riot Client を追加しました。「設定をすべて保存」で反映されます。",
+                "プリセット追加", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
         private void OnSaveSettings(object sender, EventArgs e)
         {
             var cfg = _sync.GetSettings();
@@ -1025,6 +1172,21 @@ namespace FocusGuard
             string err;
             if (!_sync.UpdateState(st, out err, false))
             {
+                if (!RuleEngine.WouldWeakenHardLock(_sync.GetState(), st))
+                {
+                    if (PromptLv2Challenge("Lv.2 稼働中にブロック対象アプリを外すには確認フレーズを入力してください:"))
+                    {
+                        if (_sync.UpdateState(st, out err, true))
+                        {
+                            MessageBox.Show("設定を保存しました。", "保存完了", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        return;
+                    }
+                }
                 MessageBox.Show(err, "一部保存できませんでした", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }

@@ -79,6 +79,13 @@ class BrowserBlockerService : AccessibilityService() {
         if (now - lastTriggerAtMs < 900L) return
         lastTriggerAtMs = now
 
+        val appLabel = try {
+            val ai = packageManager.getApplicationInfo(pkg, 0)
+            packageManager.getApplicationLabel(ai)?.toString()?.ifBlank { pkg } ?: pkg
+        } catch (_: Exception) {
+            pkg
+        }
+
         if (eff.level >= 3) {
             // Lv.3: Hard block - immediately return to Home screen
             performGlobalAction(GLOBAL_ACTION_HOME)
@@ -87,7 +94,7 @@ class BrowserBlockerService : AccessibilityService() {
                 lastHardToastAtMs = now
                 Toast.makeText(
                     applicationContext,
-                    "Lv.3 ハードブロック中（残り: ${eff.remainingText()}）",
+                    "Lv.3 強制ブロック中: 「$appLabel」（残り: ${eff.remainingText()}）",
                     Toast.LENGTH_SHORT
                 ).show()
             }
@@ -106,7 +113,7 @@ class BrowserBlockerService : AccessibilityService() {
                 lastHardToastAtMs = now
                 Toast.makeText(
                     applicationContext,
-                    "FocusGuard: ブロック中（「他のアプリの上に表示」を許可すると待機画面が表示されます）",
+                    "FocusGuard: 「$appLabel」をブロック中（「他のアプリの上に表示」を許可すると待機画面が出ます）",
                     Toast.LENGTH_LONG
                 ).show()
             }
@@ -123,6 +130,7 @@ class BrowserBlockerService : AccessibilityService() {
             putExtra("reason", eff.reason)
             putExtra("remaining", eff.remainingText())
             putExtra("browserPkg", pkg)
+            putExtra("appLabel", appLabel)
             putExtra("lv1WaitSec", state.lv1WaitSeconds)
             putExtra("lv1AllowMin", state.lv1AllowMinutes)
             putExtra("lv2AllowMin", state.lv2AllowMinutes)

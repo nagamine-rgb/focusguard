@@ -11,7 +11,9 @@ import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
+import android.text.Editable
 import android.text.InputType
+import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.widget.ArrayAdapter
@@ -55,8 +57,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var spnDuration: Spinner
     private lateinit var btnStopManual: Button
 
-    // 3. Schedules
+    // 3. Schedules & Target apps
     private lateinit var scheduleContainer: LinearLayout
+    private lateinit var txtTargetAppsSummary: TextView
 
     // 4. Bottom setup (Permissions + Supabase)
     private lateinit var setupSection: LinearLayout
@@ -343,6 +346,19 @@ class MainActivity : AppCompatActivity() {
         root.addView(schedCard)
 
         // ============================================================
+        // 3.5 ブロック対象アプリ（ブラウザ・ゲーム・SNS）
+        // ============================================================
+        val appsCard = makeCard()
+        appsCard.addView(makeSectionTitle("ブロック対象アプリ（ブラウザ・ゲーム・SNS）"))
+        txtTargetAppsSummary = makeSubText("読み込み中...")
+        val btnPickApps = makeButton("ブロックするアプリを選ぶ（一覧・検索）", "#2563EB") {
+            showAppPickerDialog()
+        }
+        appsCard.addView(txtTargetAppsSummary)
+        appsCard.addView(btnPickApps)
+        root.addView(appsCard)
+
+        // ============================================================
         // 4. 初期設定エリア（権限チェック ＆ Supabase 接続 — 一番下へ移動）
         // ============================================================
         setupSection = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -528,6 +544,117 @@ class MainActivity : AppCompatActivity() {
         }
 
         renderSchedules(st)
+        updateTargetAppsSummary(st)
+    }
+
+    private fun updateTargetAppsSummary(st: GuardState) {
+        val pkgs = st.browsers.android
+        val pm = packageManager
+        val installedLabels = pkgs.mapNotNull { pkg ->
+            try {
+                val ai = pm.getApplicationInfo(pkg, 0)
+                pm.getApplicationLabel(ai)?.toString()?.takeIf { it.isNotBlank() }
+            } catch (_: Exception) {
+                null
+            }
+        }
+        val preview = if (installedLabels.isEmpty()) {
+            "ブラウザ既定リスト (${pkgs.size}件)"
+        } else {
+            val head = installedLabels.take(5).joinToString("、")
+            if (installedLabels.size > 5) "$head など（この端末で ${installedLabels.size} 個が対象）"
+            else "$head（この端末で ${installedLabels.size} 個が対象）"
+        }
+        txtTargetAppsSummary.text = preview
+    }
+
+    private data class AppEntry(val label: String, val pkg: String)
+
+    private fun showAppPickerDialog() {
+        val pm = packageManager
+        val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val resolved = pm.queryIntentActivities(launcherIntent, 0)
+        val curState = repo.getState()
+        val selectedSet = curState.browsers.android.map { it.trim() }.filter { it.isNotEmpty() }.toMutableSet()
+
+        val allApps = resolved
+            .mapNotNull { ri ->
+                val pkg = ri.activityInfo?.packageName ?: return@mapNotNull null
+                if (pkg == packageName) return@mapNotNull null
+                val label = ri.loadLabel(pm)?.toString()?.ifBlank { pkg } ?: pkg
+                AppEntry(label, pkg)
+            }
+            .distinctBy { it.pkg }
+            .sortedWith(
+                compareByDescending<AppEntry> { selectedSet.any { s -> s.equals(it.pkg, ignoreCase = true) } }
+                    .thenBy { it.label.lowercase() }
+            )
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(12), dp(16), dp(8))
+        }
+        val searchBox = makeInput("アプリ名で検索（例: YouTube, ゲーム名...）", false)
+        container.addView(searchBox)
+
+        val infoText = makeSubText("チェックを入れたアプリがブロック対象になります（${allApps.size} 件）")
+        container.addView(infoText)
+
+        val listScroll = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(360)
+            )
+        }
+        val listLayout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        listScroll.addView(listLayout)
+        container.addView(listScroll)
+
+        fun renderFiltered(query: String) {
+            listLayout.removeAllViews()
+            val q = query.trim().lowercase()
+            val filtered = if (q.isEmpty()) allApps else allApps.filter {
+                it.label.lowercase().contains(q) || it.pkg.lowercase().contains(q)
+            }
+            for (app in filtered) {
+                val cb = CheckBox(this).apply {
+                    text = "${app.label}\n${app.pkg}"
+                    setTextColor(Color.WHITE)
+                    textSize = 13.5f
+                    isChecked = selectedSet.any { it.equals(app.pkg, ignoreCase = true) }
+                    setPadding(dp(6), dp(8), dp(6), dp(8))
+                    setOnCheckedChangeListener { _, checked ->
+                        selectedSet.removeAll { it.equals(app.pkg, ignoreCase = true) }
+                        if (checked) selectedSet.add(app.pkg)
+                    }
+                }
+                listLayout.addView(cb)
+            }
+        }
+
+        renderFiltered("")
+        searchBox.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                renderFiltered(s?.toString() ?: "")
+            }
+        })
+
+        AlertDialog.Builder(this)
+            .setTitle("ブロック対象アプリを選択")
+            .setView(container)
+            .setPositiveButton("保存して同期") { _, _ ->
+                if (selectedSet.isEmpty()) {
+                    toast("最低 1 つ以上のアプリを選択してください")
+                    return@setPositiveButton
+                }
+                val next = repo.getState().deepCopy()
+                next.browsers.android = selectedSet.toMutableList()
+                applyScheduleChangeWithLv2Check(next, "Lv.2 稼働中にブロック対象アプリを外すには確認フレーズを入力してください：")
+            }
+            .setNegativeButton("キャンセル", null)
+            .show()
     }
 
     private fun renderSchedules(st: GuardState) {

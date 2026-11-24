@@ -119,8 +119,8 @@ namespace FocusGuard
             var lblTitle = new Label
             {
                 Text = level == 1
-                    ? "ちょっと待って。本当に今ブラウザが必要？"
-                    : "集中モード中です。無意識の起動をブロックしました。",
+                    ? "ちょっと待って。本当に今このアプリが必要？"
+                    : "集中モード中です。対象アプリの起動をブロックしました。",
                 Font = new Font("Meiryo UI", 14.5f, FontStyle.Bold),
                 ForeColor = Color.White,
                 Location = new Point(32, 68),
@@ -130,7 +130,7 @@ namespace FocusGuard
 
             var lblMeta = new Label
             {
-                Text = string.Format("理由: {0}  /  残り: {1}\r\n検知ブラウザ: {2}", reason, remainingText, browserNames),
+                Text = string.Format("理由: {0}  /  残り: {1}\r\n検知アプリ: {2}", reason, remainingText, browserNames),
                 Font = new Font("Meiryo UI", 9.5f),
                 ForeColor = Color.FromArgb(156, 168, 190),
                 Location = new Point(32, 128),
@@ -147,10 +147,10 @@ namespace FocusGuard
                 BuildLv2Controls(card, cardW);
             }
 
-            // Primary action: close browser (recommended)
+            // Primary action: close target app (recommended)
             var btnClose = new Button
             {
-                Text = "やっぱりやめる（ブラウザを閉じる）",
+                Text = "やっぱりやめる（アプリを閉じる）",
                 Font = new Font("Meiryo UI", 11f, FontStyle.Bold),
                 ForeColor = Color.White,
                 BackColor = Color.FromArgb(37, 150, 96),
@@ -228,7 +228,7 @@ namespace FocusGuard
                     _lblCountdown.Text = "準備OK。本当に必要な用事だけ済ませましょう。";
                     _lblCountdown.ForeColor = Color.FromArgb(130, 220, 170);
                     _btnAllow.Enabled = true;
-                    _btnAllow.Text = string.Format("{0}分だけブラウザを許可する", _allowMinutes);
+                    _btnAllow.Text = string.Format("{0}分だけアプリを許可する", _allowMinutes);
                     _btnAllow.ForeColor = Color.White;
                 }
                 else
@@ -355,7 +355,7 @@ namespace FocusGuard
 
             var lblHead = new Label
             {
-                Text = "Lv.3 ハードブロック中 — ブラウザを終了しました",
+                Text = "Lv.3 ハードブロック中 — 対象アプリを終了しました",
                 Font = new Font("Meiryo UI", 9.5f, FontStyle.Bold),
                 ForeColor = Color.FromArgb(255, 130, 140),
                 Location = new Point(16, 14),

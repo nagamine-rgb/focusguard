@@ -120,6 +120,9 @@ object RuleEngine {
                 if (isShortened(cur.endsAtMs, next.endsAtMs)) {
                     return "Lv.3 ハードブロック中のため、残り時間を短縮することはできません。"
                 }
+                if (removedAnyTarget(current, proposed, dev)) {
+                    return "Lv.3 ハードブロック中のため、ブロック対象アプリを外すことはできません（追加は可能です）。"
+                }
             } else if (cur.isActive && cur.level == 2 && !lv2ChallengePassed) {
                 if (!next.isActive) {
                     return "Lv.2 ブロックを停止するには確認フレーズの入力が必要です。"
@@ -130,9 +133,20 @@ object RuleEngine {
                 if (next.level == 2 && isShortened(cur.endsAtMs, next.endsAtMs)) {
                     return "Lv.2 稼働中は残り時間を短縮できません（延長や Lv.3 への強化は可能です）。"
                 }
+                if (removedAnyTarget(current, proposed, dev)) {
+                    return "Lv.2 稼働中にブロック対象アプリを外すには確認フレーズの入力が必要です（追加はそのまま可能です）。"
+                }
             }
         }
         return null
+    }
+
+    private fun removedAnyTarget(cur: GuardState, next: GuardState, dev: String): Boolean {
+        val curList = if (dev == "pc") cur.browsers.windows else cur.browsers.android
+        val nextSet = (if (dev == "pc") next.browsers.windows else next.browsers.android)
+            .map { it.trim().lowercase() }
+            .toSet()
+        return curList.any { it.trim().lowercase() !in nextSet }
     }
 
     private fun isShortened(curEndsAt: Long?, nextEndsAt: Long?): Boolean {

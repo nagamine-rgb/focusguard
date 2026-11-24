@@ -170,15 +170,17 @@ namespace FocusGuard
                 var cur = Evaluate(current, dev, 0);
                 var next = Evaluate(proposed, dev, 0);
 
-                // Lv.3: never allow stopping, downgrading, removing target, or shortening remaining time
+                // Lv.3: never allow stopping, downgrading, removing target, shortening remaining time, or removing blocked apps
                 if (cur.IsHardLocked)
                 {
                     if (!next.IsHardLocked)
                         return "Lv.3 ハードブロック中のため、終了時刻まで解除またはレベル引き下げはできません。";
                     if (IsShortened(cur.EndsAtMs, next.EndsAtMs))
                         return "Lv.3 ハードブロック中のため、残り時間を短縮することはできません。";
+                    if (RemovedAnyTarget(current, proposed, dev))
+                        return "Lv.3 ハードブロック中のため、ブロック対象アプリを外すことはできません（追加は可能です）。";
                 }
-                // Lv.2: prevent silent downgrade (e.g. Lv.2 -> Lv.1) or shortening unless explicit challenge passed
+                // Lv.2: prevent silent downgrade (e.g. Lv.2 -> Lv.1), shortening, or removing apps unless explicit challenge passed
                 else if (cur.IsActive && cur.Level == 2 && !lv2ChallengePassed)
                 {
                     if (!next.IsActive)
@@ -187,9 +189,32 @@ namespace FocusGuard
                         return "Lv.2 稼働中は Lv.1 へ引き下げできません（解除するには「停止」から確認フレーズを入力してください）。";
                     if (next.Level == 2 && IsShortened(cur.EndsAtMs, next.EndsAtMs))
                         return "Lv.2 稼働中は残り時間を短縮できません（延長や Lv.3 への強化は可能です）。";
+                    if (RemovedAnyTarget(current, proposed, dev))
+                        return "Lv.2 稼働中にブロック対象アプリを外すには確認フレーズの入力が必要です（追加はそのまま可能です）。";
                 }
             }
             return null;
+        }
+
+        private static bool RemovedAnyTarget(GuardState current, GuardState proposed, string dev)
+        {
+            if (current == null || current.browsers == null || proposed == null || proposed.browsers == null)
+                return false;
+            var curList = dev == "pc" ? current.browsers.windows : current.browsers.android;
+            var nextList = dev == "pc" ? proposed.browsers.windows : proposed.browsers.android;
+            if (curList == null || curList.Count == 0) return false;
+            var nextSet = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (nextList != null)
+            {
+                foreach (var x in nextList)
+                    if (!string.IsNullOrWhiteSpace(x)) nextSet.Add(x.Trim());
+            }
+            foreach (var item in curList)
+            {
+                if (!string.IsNullOrWhiteSpace(item) && !nextSet.Contains(item.Trim()))
+                    return true;
+            }
+            return false;
         }
 
         private static bool IsShortened(long? curEndsAt, long? nextEndsAt)
