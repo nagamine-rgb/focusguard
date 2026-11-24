@@ -2,9 +2,9 @@ package com.focusguard.app
 
 import android.app.AlertDialog
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -16,6 +16,7 @@ import android.text.InputType
 import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.CheckBox
@@ -26,6 +27,8 @@ import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.SwitchCompat
+import java.util.Calendar
 import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity() {
@@ -35,13 +38,25 @@ class MainActivity : AppCompatActivity() {
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private var selectedLevel = 2
+    private var selectedDuration = 30
+    private var selectedTarget = "all"
     private val dayLabels = arrayOf("日", "月", "火", "水", "木", "金", "土")
+    private val durValues = intArrayOf(15, 30, 60, 120, 0)
+    private val durLabels = arrayOf("15分", "30分", "1時間", "2時間", "手動で止めるまで")
+    private val tgtValues = arrayOf("all", "pc", "android")
+    private val tgtLabels = arrayOf("両方", "PCだけ", "スマホだけ")
+    private val lvDescs = arrayOf(
+        "15秒待てば、5分だけ開けられます。",
+        "表示された名言を手で打てば、10分だけ開けられます。",
+        "すぐに閉じます。終わる時刻までだれも止められません。"
+    )
 
-    // Top compact warning (hidden once permissions are granted)
     private lateinit var scrollView: ScrollView
     private lateinit var permWarningBanner: TextView
 
-    // 1. Live dual status cards
+    // 文字盤と端末の状態
+    private lateinit var dial: DialView
+    private lateinit var legendNow: View
     private lateinit var txtPcLevel: TextView
     private lateinit var txtPcSub: TextView
     private lateinit var txtAndroidLevel: TextView
@@ -49,19 +64,22 @@ class MainActivity : AppCompatActivity() {
     private lateinit var txtSyncStatus: TextView
     private lateinit var btnEndSnooze: Button
 
-    // 2. Remote controls
-    private lateinit var btnLv1: Button
-    private lateinit var btnLv2: Button
-    private lateinit var btnLv3: Button
-    private lateinit var spnTarget: Spinner
-    private lateinit var spnDuration: Spinner
+    // リモコン
+    private lateinit var lockCard: LinearLayout
+    private val levelButtons = mutableListOf<LinearLayout>()
+    private val durChips = mutableListOf<TextView>()
+    private val tgtSegs = mutableListOf<TextView>()
+    private lateinit var txtLvDesc: TextView
+    private lateinit var txtLv3Warn: TextView
+    private lateinit var btnStart: Button
     private lateinit var btnStopManual: Button
 
-    // 3. Schedules & Target apps
+    // スケジュールと止めるアプリ
     private lateinit var scheduleContainer: LinearLayout
     private lateinit var txtTargetAppsSummary: TextView
+    private var scheduleSignature: String? = null
 
-    // 4. Bottom setup (Permissions + Supabase)
+    // 初期設定（権限と Supabase）
     private lateinit var setupSection: LinearLayout
     private lateinit var txtPermAccess: TextView
     private lateinit var btnPermAccess: Button
@@ -72,6 +90,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var inUrl: EditText
     private lateinit var inAnonKey: EditText
     private lateinit var inSyncKey: EditText
+
+    private var builtLocked: Boolean? = null
 
     private val uiTicker = object : Runnable {
         private var tickCount = 0
@@ -91,10 +111,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         repo = SyncRepository.getInstance(this)
-        buildUi()
-        loadConfigToInputs()
-        refreshPermissionCard()
-        refreshUiFromCache()
+        rebuildUi(isLockedNow())
 
         io.execute {
             repo.pullFromSupabase(true)
@@ -115,24 +132,43 @@ class MainActivity : AppCompatActivity() {
         super.onPause()
     }
 
+    private fun isLockedNow(): Boolean {
+        val st = repo.getState()
+        return RuleEngine.evaluate(st, "pc", 0L).isHardLocked || RuleEngine.evaluate(st, "android", 0L).isHardLocked
+    }
+
+    /** Lv.3 のロック状態が変わったら、配色ごと画面を作り直す */
+    private fun rebuildUi(locked: Boolean) {
+        val scrollY = if (::scrollView.isInitialized) scrollView.scrollY else 0
+        Fg.locked = locked
+        builtLocked = locked
+        scheduleSignature = null
+        buildUi()
+        loadConfigToInputs()
+        refreshPermissionCard()
+        refreshUiFromCache()
+        window.statusBarColor = Fg.ground
+        window.navigationBarColor = Fg.ground
+        scrollView.post { scrollView.scrollTo(0, scrollY) }
+    }
+
+    private fun lp(w: Int = ViewGroup.LayoutParams.MATCH_PARENT, h: Int = ViewGroup.LayoutParams.WRAP_CONTENT, top: Int = 0, bottom: Int = 0) =
+        LinearLayout.LayoutParams(w, h).apply { topMargin = top; bottomMargin = bottom }
+
     private fun buildUi() {
-        scrollView = ScrollView(this).apply {
-            setBackgroundColor(Color.parseColor("#0D1119"))
-        }
+        levelButtons.clear(); durChips.clear(); tgtSegs.clear()
+        scrollView = ScrollView(this).apply { setBackgroundColor(Fg.ground) }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(14), dp(14), dp(40))
+            setPadding(dp(20), dp(18), dp(20), dp(48))
         }
         scrollView.addView(root)
 
-        // Compact Header row
+        // ヘッダー
         val headerRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(10) }
+            layoutParams = lp(bottom = dp(8))
         }
         val titleWrap = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -140,59 +176,49 @@ class MainActivity : AppCompatActivity() {
         }
         titleWrap.addView(TextView(this).apply {
             text = "FocusGuard"
-            setTextColor(Color.WHITE)
-            textSize = 21f
-            setTypeface(null, Typeface.BOLD)
+            setTextColor(Fg.ink)
+            textSize = 22f
+            typeface = Fg.serif
         })
         txtSyncStatus = TextView(this).apply {
-            text = "同期待機中"
-            setTextColor(Color.parseColor("#95A4BF"))
-            textSize = 11.5f
+            text = "同期を待っています"
+            setTextColor(Fg.sub)
+            textSize = 12f
         }
         titleWrap.addView(txtSyncStatus)
-
-        val btnSyncMini = Button(this).apply {
-            text = "同期"
-            isAllCaps = false
-            setTextColor(Color.parseColor("#CFE0FF"))
-            textSize = 12.5f
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#1D283B"))
-                cornerRadius = dp(9).toFloat()
-                setStroke(dp(1), Color.parseColor("#2E3E5C"))
-            }
-            layoutParams = LinearLayout.LayoutParams(dp(64), dp(34))
-            setOnClickListener {
-                io.execute {
-                    repo.pullFromSupabase(false)
-                    repo.sendHeartbeat()
-                    mainHandler.post {
-                        refreshUiFromCache()
-                        toast(repo.lastSyncMessage)
-                    }
+        headerRow.addView(titleWrap)
+        if (Fg.locked) {
+            headerRow.addView(TextView(this).apply {
+                text = "Lv.3 ロック中"
+                setTextColor(Color.parseColor("#FBEFEC"))
+                textSize = 13f
+                setTypeface(null, Typeface.BOLD)
+                background = Fg.rounded(Fg.lv(3), dp(16).toFloat())
+                setPadding(dp(12), dp(6), dp(12), dp(6))
+                layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginEnd = dp(8) }
+            })
+        }
+        headerRow.addView(makeLineButton("同期", small = true) {
+            io.execute {
+                repo.pullFromSupabase(false)
+                repo.sendHeartbeat()
+                mainHandler.post {
+                    refreshUiFromCache()
+                    toast(repo.lastSyncMessage)
                 }
             }
-        }
-        headerRow.addView(titleWrap)
-        headerRow.addView(btnSyncMini)
+        }.apply { layoutParams = LinearLayout.LayoutParams(dp(72), dp(44)) })
         root.addView(headerRow)
 
-        // Compact warning banner (ONLY visible when required permissions are OFF)
+        // 権限が足りないときだけ出す案内
         permWarningBanner = TextView(this).apply {
-            text = "⚠️ スマホのブロック権限が未設定です（タップして設定へ移動）"
-            setTextColor(Color.parseColor("#FDE68A"))
-            textSize = 12.5f
+            text = "スマホのブロックに必要な権限がまだです。タップして設定へ"
+            setTextColor(Fg.lvText(1))
+            textSize = 13f
             setTypeface(null, Typeface.BOLD)
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#422D0E"))
-                cornerRadius = dp(10).toFloat()
-                setStroke(dp(1), Color.parseColor("#B45309"))
-            }
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(12) }
+            background = Fg.rounded(Color.parseColor("#F4E6C4"), dp(12).toFloat(), dp(1), Fg.lv(1))
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            layoutParams = lp(bottom = dp(12))
             visibility = View.GONE
             setOnClickListener {
                 scrollView.post { scrollView.smoothScrollTo(0, setupSection.top) }
@@ -200,190 +226,177 @@ class MainActivity : AppCompatActivity() {
         }
         root.addView(permWarningBanner)
 
-        // ============================================================
-        // 1. 現在の稼働状況（2カラム・最優先で見やすく！）
-        // ============================================================
-        val statusCard = makeCard()
-        statusCard.addView(makeSectionTitle("現在の稼働状況"))
+        // 24時間の文字盤
+        dial = DialView(this).apply { layoutParams = lp(top = dp(4)) }
+        root.addView(dial)
+        val legend = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            layoutParams = lp(top = dp(6), bottom = dp(18))
+        }
+        legendNow = View(this).apply {
+            background = Fg.rounded(Fg.lv(2), dp(3).toFloat())
+            layoutParams = LinearLayout.LayoutParams(dp(14), dp(6)).apply { marginEnd = dp(6) }
+        }
+        legend.addView(legendNow)
+        legend.addView(makeSub("いまのブロック", 12f).apply { layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginEnd = dp(16) } })
+        legend.addView(View(this).apply {
+            background = Fg.rounded(Fg.sched, dp(3).toFloat())
+            layoutParams = LinearLayout.LayoutParams(dp(14), dp(6)).apply { marginEnd = dp(6) }
+        })
+        legend.addView(makeSub("今日のスケジュール", 12f))
+        root.addView(legend)
 
+        // 端末ごとの状態
         val dualRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
+            layoutParams = lp(bottom = dp(10))
         }
+        val pcBox = makeDeviceTile("Windows PC")
+        txtPcLevel = makeDeviceState(); txtPcSub = makeSub("いつも通り使えます", 12f)
+        pcBox.addView(txtPcLevel); pcBox.addView(txtPcSub)
+        (pcBox.layoutParams as LinearLayout.LayoutParams).marginEnd = dp(10)
+        val anBox = makeDeviceTile("Android")
+        txtAndroidLevel = makeDeviceState(); txtAndroidSub = makeSub("いつも通り使えます", 12f)
+        anBox.addView(txtAndroidLevel); anBox.addView(txtAndroidSub)
+        dualRow.addView(pcBox); dualRow.addView(anBox)
+        root.addView(dualRow)
 
-        val pcBox = makeDeviceTile("Windows PC").also { box ->
-            txtPcLevel = TextView(this).apply {
-                text = "待機中"
-                textSize = 16.5f
-                setTypeface(null, Typeface.BOLD)
-                setTextColor(Color.parseColor("#6EE7B7"))
-                setPadding(0, dp(4), 0, dp(2))
-            }
-            txtPcSub = TextView(this).apply {
-                text = "通常利用OK"
-                textSize = 12f
-                setTextColor(Color.parseColor("#95A4BF"))
-            }
-            box.addView(txtPcLevel)
-            box.addView(txtPcSub)
-        }
-        (pcBox.layoutParams as LinearLayout.LayoutParams).marginEnd = dp(8)
-
-        val androidBox = makeDeviceTile("Android スマホ").also { box ->
-            txtAndroidLevel = TextView(this).apply {
-                text = "待機中"
-                textSize = 16.5f
-                setTypeface(null, Typeface.BOLD)
-                setTextColor(Color.parseColor("#6EE7B7"))
-                setPadding(0, dp(4), 0, dp(2))
-            }
-            txtAndroidSub = TextView(this).apply {
-                text = "通常利用OK"
-                textSize = 12f
-                setTextColor(Color.parseColor("#95A4BF"))
-            }
-            box.addView(txtAndroidLevel)
-            box.addView(txtAndroidSub)
-        }
-
-        dualRow.addView(pcBox)
-        dualRow.addView(androidBox)
-        statusCard.addView(dualRow)
-
-        btnEndSnooze = makeButton("一時許可を今すぐ終了", "#475569") {
+        btnEndSnooze = makeLineButton("一時的に開けているのを今すぐ終える") {
             repo.setSnoozeUntilMs(0L)
             refreshUiFromCache()
-            toast("一時許可を終了しました")
+            toast("一時的に開けていたのを終えました")
         }.apply { visibility = View.GONE }
-        statusCard.addView(btnEndSnooze)
-        root.addView(statusCard)
+        root.addView(btnEndSnooze)
 
-        // ============================================================
-        // 2. 今すぐブロック開始（リモコン）
-        // ============================================================
+        // Lv.3 ロック中にできること
+        lockCard = makeCard()
+        lockCard.addView(makeSectionTitle("ロック中にできること"))
+        lockCard.addView(makeSub("延ばすことと、止めるアプリを増やすことはできます。短くする・弱める・止めることはできません。", 13f).apply { setPadding(0, 0, 0, dp(10)) })
+        val extRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        extRow.addView(makeStrongButton("30分延ばす") { extendHardLock(30) }.apply {
+            layoutParams = LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginEnd = dp(8) }
+        })
+        extRow.addView(makeStrongButton("1時間延ばす") { extendHardLock(60) }.apply {
+            layoutParams = LinearLayout.LayoutParams(0, dp(48), 1f)
+        })
+        lockCard.addView(extRow)
+        lockCard.visibility = if (Fg.locked) View.VISIBLE else View.GONE
+        root.addView(lockCard)
+
+        // 新しくブロックする
         val remoteCard = makeCard()
-        remoteCard.addView(makeSectionTitle("今すぐブロック開始"))
-
-        val lvRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(10) }
+        remoteCard.addView(makeSectionTitle("新しくブロックする"))
+        remoteCard.addView(makeGroupTitle("強さ"))
+        val lvRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        for (lv in 1..3) {
+            val b = makeLevelButton(lv)
+            b.layoutParams = LinearLayout.LayoutParams(0, dp(80), 1f).apply { if (lv < 3) marginEnd = dp(8) }
+            levelButtons.add(b)
+            lvRow.addView(b)
         }
-        btnLv1 = makeLevelBtn("Lv.1\n気づき", 1)
-        btnLv2 = makeLevelBtn("Lv.2\nひと手間", 2)
-        btnLv3 = makeLevelBtn("Lv.3\n強制", 3)
-        lvRow.addView(btnLv1)
-        lvRow.addView(btnLv2)
-        lvRow.addView(btnLv3)
         remoteCard.addView(lvRow)
-        updateLevelButtons()
+        txtLvDesc = makeSub("", 13f).apply { setPadding(0, dp(8), 0, dp(4)); minLines = 2 }
+        remoteCard.addView(txtLvDesc)
 
-        // Side-by-side Target & Duration selectors (saves vertical space!)
-        val optRow = LinearLayout(this).apply {
+        remoteCard.addView(makeGroupTitle("長さ"))
+        val durRow1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutParams = lp(bottom = dp(8)) }
+        val durRow2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        for (i in durValues.indices) {
+            val v = durValues[i]
+            val chip = makeChip(durLabels[i]) { selectedDuration = v; renderStartControls() }
+            chip.layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(44)).apply { marginEnd = dp(8) }
+            durChips.add(chip)
+            if (i < 4) durRow1.addView(chip) else durRow2.addView(chip)
+        }
+        remoteCard.addView(durRow1)
+        remoteCard.addView(durRow2)
+
+        remoteCard.addView(makeGroupTitle("止める端末"))
+        val seg = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(6) }
+            background = Fg.rounded(Fg.well, dp(12).toFloat())
+            setPadding(dp(4), dp(4), dp(4), dp(4))
         }
-        val colTarget = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                marginEnd = dp(8)
+        for (i in tgtValues.indices) {
+            val v = tgtValues[i]
+            val s = TextView(this).apply {
+                text = tgtLabels[i]
+                textSize = 14f
+                gravity = Gravity.CENTER
+                setTextColor(Fg.ink)
+                layoutParams = LinearLayout.LayoutParams(0, dp(44), 1f)
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { selectedTarget = v; renderStartControls() }
             }
+            tgtSegs.add(s)
+            seg.addView(s)
         }
-        colTarget.addView(makeLabel("対象端末"))
-        spnTarget = Spinner(this).apply {
-            adapter = ArrayAdapter(
-                this@MainActivity,
-                android.R.layout.simple_spinner_dropdown_item,
-                listOf("両方 (PC+スマホ)", "PC のみ", "スマホのみ")
-            )
-            background = makeSpinnerBg()
-        }
-        colTarget.addView(spnTarget)
+        remoteCard.addView(seg)
 
-        val colDur = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        txtLv3Warn = TextView(this).apply {
+            text = "Lv.3 は途中で止められないので、手動解除ではなく1時間で始めます。"
+            setTextColor(Fg.lvText(3))
+            textSize = 12f
+            setPadding(0, dp(10), 0, 0)
+            visibility = View.GONE
         }
-        colDur.addView(makeLabel("継続時間"))
-        spnDuration = Spinner(this).apply {
-            adapter = ArrayAdapter(
-                this@MainActivity,
-                android.R.layout.simple_spinner_dropdown_item,
-                listOf("15分", "30分", "60分", "120分", "手動解除まで")
-            )
-            setSelection(1)
-            background = makeSpinnerBg()
+        remoteCard.addView(txtLv3Warn)
+
+        btnStart = Button(this).apply {
+            isAllCaps = false
+            textSize = 16f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Fg.paper)
+            stateListAnimator = null
+            layoutParams = lp(h = dp(56), top = dp(16))
+            setOnClickListener { startManualSession() }
         }
-        colDur.addView(spnDuration)
-
-        optRow.addView(colTarget)
-        optRow.addView(colDur)
-        remoteCard.addView(optRow)
-
-        val btnStart = makeButton("この内容でブロック開始", "#3B82F6") { startManualSession() }
-        btnStopManual = makeButton("手動ブロックを停止", "#3E4A61") { stopManualSession() }
         remoteCard.addView(btnStart)
+        btnStopManual = makeLineButton("手動のブロックはありません") { stopManualSession() }
         remoteCard.addView(btnStopManual)
         root.addView(remoteCard)
+        renderStartControls()
 
-        // ============================================================
-        // 3. 時間帯スケジュール
-        // ============================================================
-        val schedCard = makeCard()
-        schedCard.addView(makeSectionTitle("時間帯スケジュール"))
+        // スケジュール
+        root.addView(makeSectionTitle("スケジュール").apply { setPadding(0, dp(10), 0, dp(10)) })
         scheduleContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        schedCard.addView(scheduleContainer)
-        val btnAddSched = makeButton("＋ 新しいスケジュールを追加", "#1F9D5D") { showAddScheduleDialog() }
-        schedCard.addView(btnAddSched)
-        root.addView(schedCard)
+        root.addView(scheduleContainer)
+        root.addView(makeLineButton("スケジュールを追加") { showAddScheduleDialog() }.apply {
+            (layoutParams as LinearLayout.LayoutParams).bottomMargin = dp(18)
+        })
 
-        // ============================================================
-        // 3.5 ブロック対象アプリ（ブラウザ・ゲーム・SNS）
-        // ============================================================
+        // 止めるアプリ
         val appsCard = makeCard()
-        appsCard.addView(makeSectionTitle("ブロック対象アプリ（ブラウザ・ゲーム・SNS）"))
-        txtTargetAppsSummary = makeSubText("読み込み中...")
-        val btnPickApps = makeButton("ブロックするアプリを選ぶ（一覧・検索）", "#2563EB") {
-            showAppPickerDialog()
-        }
+        appsCard.addView(makeSectionTitle("止めるアプリ"))
+        txtTargetAppsSummary = makeSub("読み込み中", 13f)
         appsCard.addView(txtTargetAppsSummary)
-        appsCard.addView(btnPickApps)
+        appsCard.addView(makeLineButton("止めるアプリを選ぶ") { showAppPickerDialog() })
         root.addView(appsCard)
 
-        // ============================================================
-        // 4. 初期設定エリア（権限チェック ＆ Supabase 接続 — 一番下へ移動）
-        // ============================================================
+        // 初期設定
         setupSection = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
         val permCard = makeCard()
-        permCard.addView(makeSectionTitle("初期設定：スマホの権限"))
-        txtPermAccess = makeSubText("")
-        btnPermAccess = makeButton("「ユーザー補助」設定を開く", "#3B82F6") {
+        permCard.addView(makeSectionTitle("スマホの権限"))
+        txtPermAccess = makeSub("", 13f)
+        btnPermAccess = makePrimaryButton("「ユーザー補助」の設定を開く") {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
-        txtPermOverlay = makeSubText("")
-        btnPermOverlay = makeButton("「他のアプリの上に表示」設定を開く", "#3B82F6") {
-            val i = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
-            startActivity(i)
+        txtPermOverlay = makeSub("", 13f).apply { setPadding(0, dp(12), 0, 0) }
+        btnPermOverlay = makePrimaryButton("「他のアプリの上に表示」の設定を開く") {
+            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
         }
-        val btnBattery = makeButton("バッテリー制限なし（推奨）", "#334155") {
+        val btnBattery = makeLineButton("バッテリーの制限をなくす（おすすめ）") {
             try {
                 val pm = getSystemService(POWER_SERVICE) as PowerManager
                 if (pm.isIgnoringBatteryOptimizations(packageName)) {
-                    toast("すでにバッテリー制限なしになっています！")
+                    toast("すでにバッテリーの制限はありません")
                 } else {
-                    val i = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
                         data = Uri.parse("package:$packageName")
-                    }
-                    startActivity(i)
+                    })
                 }
             } catch (_: Exception) {
                 startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
@@ -397,21 +410,20 @@ class MainActivity : AppCompatActivity() {
         setupSection.addView(permCard)
 
         val cfgCard = makeCard()
-        cfgCard.addView(makeSectionTitle("初期設定：Supabase 同期"))
-        cfgCard.addView(makeSubText("PC の「スマホ設定用ハッシュをコピー」を貼ると自動入力されます。"))
-
+        cfgCard.addView(makeSectionTitle("Supabase で同期"))
+        cfgCard.addView(makeSub("PC アプリの「スマホ用の設定をコピー」で写した文字を貼ると、まとめて入ります。", 13f))
         inHashImport = makeInput("#url=...&key=...&sync=... を貼り付け", false)
-        val btnImport = makeButton("URL / ハッシュから一括取り込み", "#2C6B5C") {
+        val btnImport = makeLineButton("貼り付けた設定を取り込む") {
             val parsed = repo.parseConfigFromHashOrUrl(inHashImport.text.toString())
             if (parsed == null) {
-                toast("取り込めませんでした。#url=...&key=...&sync=... の形式を確認してください。")
+                toast("取り込めませんでした。#url=...&key=...&sync=... の形か確認してください。")
             } else {
                 inUrl.setText(parsed.url)
                 inAnonKey.setText(parsed.anonKey)
                 inSyncKey.setText(parsed.syncKey)
                 repo.saveConfig(parsed)
                 inHashImport.setText("")
-                toast("取り込み完了！同期を開始します...")
+                toast("取り込みました。同期を始めます")
                 io.execute {
                     repo.pullFromSupabase(true)
                     repo.sendHeartbeat()
@@ -425,27 +437,25 @@ class MainActivity : AppCompatActivity() {
         cfgCard.addView(makeLabel("Supabase URL"))
         inUrl = makeInput("https://xxxx.supabase.co", false)
         cfgCard.addView(inUrl)
-
         cfgCard.addView(makeLabel("Anon Key"))
         inAnonKey = makeInput("eyJ...", true)
         cfgCard.addView(inAnonKey)
-
-        cfgCard.addView(makeLabel("Sync Key（PCと共通の秘密鍵）"))
-        inSyncKey = makeInput("8文字以上の秘密鍵", false)
+        cfgCard.addView(makeLabel("Sync Key（PC とスマホで同じ合言葉）"))
+        inSyncKey = makeInput("8文字以上", false)
         cfgCard.addView(inSyncKey)
 
-        val btnTest = makeButton("接続テスト", "#334155") {
+        val btnTest = makeLineButton("接続テスト") {
             val testCfg = SupabaseConfig(inUrl.text.toString(), inAnonKey.text.toString(), inSyncKey.text.toString())
             io.execute {
                 val (_, msg) = repo.testConnection(testCfg)
                 mainHandler.post { toast(msg) }
             }
         }
-        val btnSaveCfg = makeButton("設定を保存して同期", "#3B82F6") {
+        val btnSaveCfg = makePrimaryButton("接続を保存して同期") {
             val newCfg = SupabaseConfig(inUrl.text.toString(), inAnonKey.text.toString(), inSyncKey.text.toString())
             if (!newCfg.isConfigured) {
-                toast("URL / Anon Key / Sync Key（8文字以上）を入力してください。")
-                return@makeButton
+                toast("URL・Anon Key・Sync Key（8文字以上）を入れてください。")
+                return@makePrimaryButton
             }
             repo.saveConfig(newCfg)
             io.execute {
@@ -453,7 +463,7 @@ class MainActivity : AppCompatActivity() {
                 repo.sendHeartbeat()
                 mainHandler.post {
                     refreshUiFromCache()
-                    toast("保存して同期しました！")
+                    toast("保存して同期しました")
                 }
             }
         }
@@ -465,18 +475,51 @@ class MainActivity : AppCompatActivity() {
         setContentView(scrollView)
     }
 
+    private fun renderStartControls() {
+        for ((i, b) in levelButtons.withIndex()) {
+            val lv = i + 1
+            val sel = lv == selectedLevel
+            b.background = Fg.rounded(if (sel) Fg.white else Color.TRANSPARENT, dp(14).toFloat(), dp(2), if (sel) Fg.ink else Fg.line)
+            val bars = b.getChildAt(0) as LinearLayout
+            for (j in 0 until 3) {
+                bars.getChildAt(j).background = Fg.rounded(if (sel && j < lv) Fg.lv(lv) else Color.parseColor("#C3CBC0"), dp(2).toFloat())
+            }
+            b.contentDescription = "強さ ${Fg.lvName(lv)}" + if (sel) "（選択中）" else ""
+        }
+        for ((i, c) in durChips.withIndex()) {
+            val sel = durValues[i] == selectedDuration
+            c.background = if (sel) Fg.rounded(Fg.ink, dp(22).toFloat()) else Fg.rounded(Color.TRANSPARENT, dp(22).toFloat(), dp(1), Fg.line)
+            c.setTextColor(if (sel) Fg.paper else Fg.ink)
+            c.setTypeface(null, if (sel) Typeface.BOLD else Typeface.NORMAL)
+        }
+        for ((i, s) in tgtSegs.withIndex()) {
+            val sel = tgtValues[i] == selectedTarget
+            s.background = if (sel) Fg.rounded(Fg.white, dp(9).toFloat()) else null
+            s.setTypeface(null, if (sel) Typeface.BOLD else Typeface.NORMAL)
+        }
+        txtLvDesc.text = lvDescs[selectedLevel - 1]
+        val lv3NoEnd = selectedLevel == 3 && selectedDuration == 0
+        txtLv3Warn.visibility = if (lv3NoEnd) View.VISIBLE else View.GONE
+        btnStart.text = when {
+            lv3NoEnd -> "1時間ブロックする"
+            selectedDuration == 0 -> "手動で止めるまでブロックする"
+            else -> durLabels[durValues.indexOf(selectedDuration)] + "ブロックする"
+        }
+        btnStart.background = Fg.primary(Fg.lv(selectedLevel), dp(16).toFloat(), dp(4))
+    }
+
     private fun refreshPermissionCard() {
         val accOk = isAccessibilityEnabled()
         val ovOk = Settings.canDrawOverlays(this)
 
         permWarningBanner.visibility = if (accOk && ovOk) View.GONE else View.VISIBLE
 
-        txtPermAccess.text = if (accOk) "✅ ユーザー補助（ブラウザ検知）: 有効" else "⚠️ ユーザー補助（ブラウザ検知）: 未設定（必須）"
-        txtPermAccess.setTextColor(if (accOk) Color.parseColor("#6EE7B7") else Color.parseColor("#FCD34D"))
+        txtPermAccess.text = if (accOk) "ユーザー補助（アプリの検知）: オン" else "ユーザー補助（アプリの検知）: まだです（必須）"
+        txtPermAccess.setTextColor(if (accOk) Fg.ok else Fg.lvText(2))
         btnPermAccess.visibility = if (accOk) View.GONE else View.VISIBLE
 
-        txtPermOverlay.text = if (ovOk) "✅ 他のアプリの上に表示（待機画面）: 許可済み" else "⚠️ 他のアプリの上に表示: 未設定（Lv.1/Lv.2に必要）"
-        txtPermOverlay.setTextColor(if (ovOk) Color.parseColor("#6EE7B7") else Color.parseColor("#FCD34D"))
+        txtPermOverlay.text = if (ovOk) "他のアプリの上に表示（待ち画面）: 許可済み" else "他のアプリの上に表示: まだです（Lv.1・Lv.2 に必要）"
+        txtPermOverlay.setTextColor(if (ovOk) Fg.ok else Fg.lvText(2))
         btnPermOverlay.visibility = if (ovOk) View.GONE else View.VISIBLE
     }
 
@@ -493,58 +536,142 @@ class MainActivity : AppCompatActivity() {
         inSyncKey.setText(cfg.syncKey)
     }
 
+    private fun clock(ms: Long): String {
+        val c = Calendar.getInstance().apply { timeInMillis = ms }
+        return "${c.get(Calendar.HOUR_OF_DAY)}:" + String.format("%02d", c.get(Calendar.MINUTE))
+    }
+
     private fun refreshUiFromCache() {
         val st = repo.getState()
         val effPc = RuleEngine.evaluate(st, "pc", 0L)
         val effAn = RuleEngine.evaluate(st, "android", repo.getSnoozeUntilMs())
-
-        // PC tile
-        if (effPc.isActive) {
-            txtPcLevel.text = "Lv.${effPc.level} 稼働中"
-            txtPcLevel.setTextColor(levelColor(effPc.level))
-            txtPcSub.text = "残り ${effPc.remainingText()}\n${effPc.reason}"
-        } else {
-            txtPcLevel.text = "待機中"
-            txtPcLevel.setTextColor(Color.parseColor("#6EE7B7"))
-            txtPcSub.text = "通常利用OK"
+        val locked = effPc.isHardLocked || effAn.isHardLocked
+        if (builtLocked != null && builtLocked != locked) {
+            rebuildUi(locked)
+            return
         }
 
-        // Android tile
-        when {
-            !effAn.isActive -> {
-                txtAndroidLevel.text = "待機中"
-                txtAndroidLevel.setTextColor(Color.parseColor("#6EE7B7"))
-                txtAndroidSub.text = "通常利用OK"
-            }
-            effAn.isSnoozed -> {
-                txtAndroidLevel.text = "一時許可中"
-                txtAndroidLevel.setTextColor(Color.parseColor("#93C5FD"))
-                txtAndroidSub.text = "残り ${effAn.snoozeRemainingSeconds} 秒\n(元: Lv.${effAn.level})"
-            }
-            else -> {
-                txtAndroidLevel.text = "Lv.${effAn.level} 稼働中"
-                txtAndroidLevel.setTextColor(levelColor(effAn.level))
-                txtAndroidSub.text = "残り ${effAn.remainingText()}\n${effAn.reason}"
-            }
+        setDevice(txtPcLevel, txtPcSub, effPc)
+        setDevice(txtAndroidLevel, txtAndroidSub, effAn)
+        if (effAn.isActive && effAn.isSnoozed) {
+            txtAndroidLevel.text = "一時的に開けています"
+            txtAndroidLevel.setTextColor(Fg.ink)
+            txtAndroidSub.text = "あと ${effAn.snoozeRemainingSeconds} 秒で Lv.${effAn.level} に戻ります"
         }
-
         btnEndSnooze.visibility = if (effAn.isSnoozed) View.VISIBLE else View.GONE
 
         txtSyncStatus.text = repo.lastSyncMessage
-        txtSyncStatus.setTextColor(if (repo.lastSyncOk) Color.parseColor("#95A4BF") else Color.parseColor("#FCA5A5"))
+        txtSyncStatus.setTextColor(if (repo.lastSyncOk) Fg.sub else Fg.lvText(3))
 
-        val locked = effPc.isHardLocked || effAn.isHardLocked
-        val lv2Active = !locked && ((effPc.isActive && effPc.level == 2) || (effAn.isActive && effAn.level == 2))
-        btnStopManual.isEnabled = !locked
-        btnStopManual.alpha = if (locked) 0.45f else 1.0f
+        val top = if (effAn.isActive && (!effPc.isActive || effAn.level > effPc.level)) effAn else effPc
+        updateDial(st, top)
+
+        val ms = st.manualSession
+        val now = System.currentTimeMillis()
+        val manualOn = ms.active && (ms.expiresAt <= 0L || ms.expiresAt > now)
+        val lv2Active = (effPc.isActive && effPc.level == 2) || (effAn.isActive && effAn.level == 2)
+        btnStopManual.isEnabled = !locked && manualOn
+        styleLineButton(btnStopManual, btnStopManual.isEnabled)
         btnStopManual.text = when {
-            locked -> "Lv.3 ハードロック中（停止不可）"
-            lv2Active -> "手動ブロックを停止（確認入力）"
-            else -> "手動ブロックを停止"
+            locked -> {
+                val lockEnd = maxOf(
+                    if (effPc.isHardLocked) effPc.endsAtMs ?: 0L else 0L,
+                    if (effAn.isHardLocked) effAn.endsAtMs ?: 0L else 0L
+                )
+                if (lockEnd > 0L) "ブロックを止める（${clock(lockEnd)} から）" else "ブロックを止める（ロック中）"
+            }
+            manualOn && lv2Active -> "手動のブロックを止める（名言の入力あり）"
+            manualOn -> "手動のブロックを止める"
+            else -> "手動のブロックはありません"
         }
 
         renderSchedules(st)
         updateTargetAppsSummary(st)
+    }
+
+    private fun setDevice(state: TextView, sub: TextView, eff: EffectiveBlockState) {
+        if (eff.isActive) {
+            state.text = "Lv.${eff.level} ブロック中"
+            state.setTextColor(Fg.lvText(eff.level))
+            val end = eff.endsAtMs
+            sub.text = if (end != null && end > 0L) "${clock(end)} まで" else "手動で止めるまで"
+        } else {
+            state.text = "ブロックなし"
+            state.setTextColor(Fg.ink)
+            sub.text = "いつも通り使えます"
+        }
+    }
+
+    private fun updateDial(st: GuardState, top: EffectiveBlockState) {
+        val cal = Calendar.getInstance()
+        val nowMin = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE) + cal.get(Calendar.SECOND) / 60.0
+        val dow = cal.get(Calendar.DAY_OF_WEEK) - 1
+        val yest = (dow + 6) % 7
+
+        dial.arcs.clear()
+        for (r in st.schedules) {
+            if (!r.enabled) continue
+            val sm = Fg.parseMin(r.startTime) ?: continue
+            val em = Fg.parseMin(r.endTime) ?: continue
+            when {
+                sm == em -> if (dow in r.days) dial.arcs.add(DialView.Arc(0.0, 1440.0, Fg.sched))
+                sm < em -> if (dow in r.days) dial.arcs.add(DialView.Arc(sm.toDouble(), (em - sm).toDouble(), Fg.sched))
+                else -> {
+                    if (dow in r.days) dial.arcs.add(DialView.Arc(sm.toDouble(), (1440 - sm).toDouble(), Fg.sched))
+                    if (yest in r.days) dial.arcs.add(DialView.Arc(0.0, em.toDouble(), Fg.sched))
+                }
+            }
+        }
+
+        val end = top.endsAtMs
+        val hasEnd = end != null && end > 0L
+        if (top.isActive) {
+            val len = if (hasEnd) (end!! - System.currentTimeMillis()) / 60000.0 else 1440.0
+            dial.arcs.add(DialView.Arc(nowMin, minOf(len, 1439.5), Fg.lv(top.level)))
+            dial.centerLabel = if (hasEnd) "ブロック終了まで" else "ブロック中"
+            dial.centerTime = if (hasEnd) {
+                val sec = ((end!! - System.currentTimeMillis()) / 1000L).coerceAtLeast(0L)
+                val h = sec / 3600; val m = (sec % 3600) / 60; val s = sec % 60
+                if (h > 0) String.format("%d:%02d:%02d", h, m, s) else String.format("%d:%02d", m, s)
+            } else "手動解除まで"
+            dial.centerTimeSmall = !hasEnd
+            dial.centerState = if (top.level >= 3) {
+                if (hasEnd) "${clock(end!!)} まで解除できません" else "解除できません"
+            } else "Lv.${top.level} ${Fg.lvName(top.level)}で止めています"
+            dial.centerStateColor = Fg.lvText(top.level)
+            legendNow.background = Fg.rounded(Fg.lv(top.level), dp(3).toFloat())
+        } else {
+            val nowMinInt = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
+            var nextTime: String? = null
+            var nextName: String? = null
+            var nextAdd = 0
+            for (add in 0 until 8) {
+                if (nextTime != null) break
+                val d = (dow + add) % 7
+                var best = Int.MAX_VALUE
+                for (r in st.schedules) {
+                    if (!r.enabled || d !in r.days) continue
+                    val sm = Fg.parseMin(r.startTime) ?: continue
+                    if (add == 0 && sm <= nowMinInt) continue
+                    if (sm < best) { best = sm; nextTime = r.startTime; nextName = r.name; nextAdd = add }
+                }
+            }
+            dial.centerLabel = "いまはブロックしていません"
+            dial.centerTimeSmall = true
+            if (nextTime != null) {
+                dial.centerTime = (when (nextAdd) { 0 -> ""; 1 -> "明日 "; else -> "${nextAdd}日後 " }) + nextTime
+                dial.centerState = "から「${nextName?.ifBlank { null } ?: "スケジュール"}」"
+            } else {
+                dial.centerTime = "自由時間"
+                dial.centerState = "スケジュールはありません"
+            }
+            dial.centerStateColor = Fg.sub
+            legendNow.background = Fg.rounded(Fg.lv(selectedLevel), dp(3).toFloat())
+        }
+        dial.nowMin = nowMin
+        dial.showLock = top.isActive && top.level >= 3
+        dial.contentDescription = "${dial.centerLabel} ${dial.centerTime} ${dial.centerState}"
+        dial.invalidate()
     }
 
     private fun updateTargetAppsSummary(st: GuardState) {
@@ -558,14 +685,13 @@ class MainActivity : AppCompatActivity() {
                 null
             }
         }
-        val preview = if (installedLabels.isEmpty()) {
-            "ブラウザ既定リスト (${pkgs.size}件)"
+        txtTargetAppsSummary.text = if (installedLabels.isEmpty()) {
+            "ブラウザの既定リスト（${pkgs.size}件）"
         } else {
             val head = installedLabels.take(5).joinToString("、")
-            if (installedLabels.size > 5) "$head など（この端末で ${installedLabels.size} 個が対象）"
-            else "$head（この端末で ${installedLabels.size} 個が対象）"
+            if (installedLabels.size > 5) "$head など、この端末で ${installedLabels.size} 個"
+            else "$head（この端末で ${installedLabels.size} 個）"
         }
-        txtTargetAppsSummary.text = preview
     }
 
     private data class AppEntry(val label: String, val pkg: String)
@@ -597,7 +723,7 @@ class MainActivity : AppCompatActivity() {
         val searchBox = makeInput("アプリ名で検索（例: YouTube, ゲーム名...）", false)
         container.addView(searchBox)
 
-        val infoText = makeSubText("チェックを入れたアプリがブロック対象になります（${allApps.size} 件）")
+        val infoText = makeSub("チェックを入れたアプリを止めます（${allApps.size} 件）", 13f)
         container.addView(infoText)
 
         val listScroll = ScrollView(this).apply {
@@ -619,7 +745,7 @@ class MainActivity : AppCompatActivity() {
             for (app in filtered) {
                 val cb = CheckBox(this).apply {
                     text = "${app.label}\n${app.pkg}"
-                    setTextColor(Color.WHITE)
+                    setTextColor(Fg.ink)
                     textSize = 13.5f
                     isChecked = selectedSet.any { it.equals(app.pkg, ignoreCase = true) }
                     setPadding(dp(6), dp(8), dp(6), dp(8))
@@ -641,8 +767,8 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        AlertDialog.Builder(this)
-            .setTitle("ブロック対象アプリを選択")
+        AlertDialog.Builder(this, android.R.style.Theme_Material_Light_Dialog_Alert)
+            .setTitle("止めるアプリを選ぶ")
             .setView(container)
             .setPositiveButton("保存して同期") { _, _ ->
                 if (selectedSet.isEmpty()) {
@@ -651,104 +777,157 @@ class MainActivity : AppCompatActivity() {
                 }
                 val next = repo.getState().deepCopy()
                 next.browsers.android = selectedSet.toMutableList()
-                applyScheduleChangeWithLv2Check(next, "Lv.2 稼働中にブロック対象アプリを外すには確認フレーズを入力してください：")
+                applyScheduleChangeWithLv2Check(next, "Lv.2 の間に止めるアプリを外すには、下の言葉を手で入力してください：")
             }
-            .setNegativeButton("キャンセル", null)
+            .setNegativeButton("やめる", null)
             .show()
     }
 
     private fun renderSchedules(st: GuardState) {
+        val sig = st.schedules.joinToString("|") { "${it.id},${it.name},${it.enabled},${it.startTime},${it.endTime},${it.level},${it.target},${it.days.joinToString("")}" }
+        if (sig == scheduleSignature) return
+        scheduleSignature = sig
         scheduleContainer.removeAllViews()
         if (st.schedules.isEmpty()) {
-            scheduleContainer.addView(makeSubText("スケジュールはまだありません。"))
+            scheduleContainer.addView(makeSub("まだありません。夜や作業時間など、毎日決まった時間に止めたいときに追加してください。", 13f).apply {
+                setPadding(0, 0, 0, dp(10))
+            })
             return
         }
         for (rule in st.schedules) {
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                background = Fg.rounded(Fg.paper, dp(14).toFloat())
+                setPadding(dp(14), dp(12), dp(10), dp(12))
+                layoutParams = lp(bottom = dp(10))
+            }
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                background = GradientDrawable().apply {
-                    setColor(Color.parseColor("#111722"))
-                    cornerRadius = dp(10).toFloat()
-                    setStroke(dp(1), Color.parseColor("#243045"))
-                }
-                setPadding(dp(12), dp(10), dp(10), dp(10))
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { bottomMargin = dp(8) }
-                alpha = if (rule.enabled) 1f else 0.55f
             }
-
             val daysStr = if (rule.days.size == 7) "毎日"
-            else rule.days.sorted().filter { it in 0..6 }.joinToString("") { dayLabels[it] }
+            else rule.days.sorted().filter { it in 0..6 }.joinToString("・") { dayLabels[it] }
             val targetStr = when (rule.target) {
-                "pc" -> "PC"
-                "android" -> "スマホ"
+                "pc" -> "PCだけ"
+                "android" -> "スマホだけ"
                 else -> "両方"
             }
-
             val info = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             }
             info.addView(TextView(this).apply {
-                text = "${rule.name}  Lv.${rule.level}"
-                setTextColor(Color.WHITE)
-                textSize = 14f
+                text = rule.name
+                setTextColor(if (rule.enabled) Fg.ink else Fg.sub)
+                textSize = 15f
                 setTypeface(null, Typeface.BOLD)
             })
-            info.addView(TextView(this).apply {
-                text = "${rule.startTime}-${rule.endTime} / $daysStr / $targetStr"
-                setTextColor(Color.parseColor("#95A4BF"))
-                textSize = 11.5f
-            })
-
-            val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            val btnToggle = makeSmallButton(if (rule.enabled) "ON" else "OFF", if (rule.enabled) "#1F9D5D" else "#475569") {
-                val next = repo.getState().deepCopy()
-                next.schedules.find { it.id == rule.id }?.let { it.enabled = !it.enabled }
-                applyScheduleChangeWithLv2Check(next, "稼働中の Lv.2 スケジュールを OFF にします。")
-            }
-            val btnDel = makeSmallButton("削除", "#7F2933") {
-                val next = repo.getState().deepCopy()
-                next.schedules.removeAll { it.id == rule.id }
-                applyScheduleChangeWithLv2Check(next, "稼働中の Lv.2 スケジュールを削除します。")
-            }
-            actions.addView(btnToggle)
-            actions.addView(btnDel)
-
+            info.addView(makeSub("$daysStr ${rule.startTime}〜${rule.endTime}、${targetStr}を Lv.${rule.level} で", 12f))
             row.addView(info)
-            row.addView(actions)
-            scheduleContainer.addView(row)
+
+            val sw = SwitchCompat(this).apply {
+                isChecked = rule.enabled
+                contentDescription = "${rule.name}を有効にする"
+                thumbTintList = ColorStateList.valueOf(Fg.paper)
+                trackTintList = ColorStateList(
+                    arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
+                    intArrayOf(Fg.ink, Fg.line)
+                )
+                setOnClickListener {
+                    val next = repo.getState().deepCopy()
+                    next.schedules.find { it.id == rule.id }?.let { it.enabled = !it.enabled }
+                    scheduleSignature = null
+                    applyScheduleChangeWithLv2Check(next, "動いている Lv.2 のスケジュールをオフにするには、下の言葉を手で入力してください：")
+                }
+            }
+            row.addView(sw)
+            row.addView(TextView(this).apply {
+                text = "削除"
+                textSize = 13f
+                setTextColor(Fg.sub)
+                gravity = Gravity.CENTER
+                background = Fg.rounded(Color.TRANSPARENT, dp(22).toFloat(), dp(1), Fg.line)
+                layoutParams = LinearLayout.LayoutParams(dp(56), dp(44)).apply { marginStart = dp(8) }
+                isClickable = true
+                isFocusable = true
+                contentDescription = "${rule.name}を削除"
+                setOnClickListener {
+                    AlertDialog.Builder(this@MainActivity, android.R.style.Theme_Material_Light_Dialog_Alert)
+                        .setTitle("スケジュールの削除")
+                        .setMessage("「${rule.name}」を削除しますか？")
+                        .setPositiveButton("削除") { _, _ ->
+                            val next = repo.getState().deepCopy()
+                            next.schedules.removeAll { it.id == rule.id }
+                            applyScheduleChangeWithLv2Check(next, "動いている Lv.2 のスケジュールを削除するには、下の言葉を手で入力してください：")
+                        }
+                        .setNegativeButton("やめる", null)
+                        .show()
+                }
+            })
+            card.addView(row)
+
+            val color = if (rule.enabled) Fg.lv(rule.level) else Fg.line
+            card.addView(TimelineView(this, Fg.parseMin(rule.startTime), Fg.parseMin(rule.endTime), color).apply {
+                layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(8)).apply {
+                    topMargin = dp(10); marginEnd = dp(4)
+                }
+            })
+            val scale = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; layoutParams = lp(top = dp(4)) }
+            val marks = arrayOf("0時", "6時", "12時", "18時", "24時")
+            for ((i, m) in marks.withIndex()) {
+                scale.addView(makeSub(m, 11f).apply {
+                    gravity = when (i) { 0 -> Gravity.START; 4 -> Gravity.END; else -> Gravity.CENTER }
+                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                })
+            }
+            card.addView(scale)
+            scheduleContainer.addView(card)
         }
     }
 
     private fun startManualSession() {
-        val target = when (spnTarget.selectedItemPosition) {
-            1 -> "pc"
-            2 -> "android"
-            else -> "all"
-        }
-        val minsArr = intArrayOf(15, 30, 60, 120, 0)
-        var mins = minsArr[spnDuration.selectedItemPosition]
-
-        if (selectedLevel == 3 && mins == 0) {
-            mins = 60
-            toast("Lv.3 は安全のため 60分タイマー で開始します")
-        }
+        var mins = selectedDuration
+        if (selectedLevel == 3 && mins == 0) mins = 60
 
         val next = repo.getState().deepCopy()
         val now = System.currentTimeMillis()
         next.manualSession = ManualSession(
             active = true,
             level = selectedLevel,
-            target = target,
+            target = selectedTarget,
             startedAt = now,
             expiresAt = if (mins > 0) now + mins * 60_000L else 0L
         )
         repo.setSnoozeUntilMs(0L)
-        pushUpdatedState(next, "ブロックを開始しました！")
+        pushUpdatedState(next, "ブロックを始めました")
+    }
+
+    /** Lv.3 ロック中に終了時刻を延ばす（短縮・解除はできない） */
+    private fun extendHardLock(mins: Int) {
+        val cur = repo.getState()
+        val effPc = RuleEngine.evaluate(cur, "pc", 0L)
+        val effAn = RuleEngine.evaluate(cur, "android", 0L)
+        val pcLocked = effPc.isHardLocked
+        val anLocked = effAn.isHardLocked
+        if (!pcLocked && !anLocked) return
+        if ((pcLocked && (effPc.endsAtMs ?: 0L) <= 0L) || (anLocked && (effAn.endsAtMs ?: 0L) <= 0L)) {
+            toast("手動で止めるまで続くブロックなので、延ばす必要はありません")
+            return
+        }
+        val base = maxOf(
+            System.currentTimeMillis(),
+            if (pcLocked) effPc.endsAtMs ?: 0L else 0L,
+            if (anLocked) effAn.endsAtMs ?: 0L else 0L
+        )
+        val next = cur.deepCopy()
+        next.manualSession = ManualSession(
+            active = true,
+            level = 3,
+            target = if (pcLocked && anLocked) "all" else if (pcLocked) "pc" else "android",
+            startedAt = System.currentTimeMillis(),
+            expiresAt = base + mins * 60_000L
+        )
+        pushUpdatedState(next, "${mins}分延ばしました")
     }
 
     private fun stopManualSession() {
@@ -756,23 +935,23 @@ class MainActivity : AppCompatActivity() {
         val effPc = RuleEngine.evaluate(cur, "pc", 0L)
         val effAn = RuleEngine.evaluate(cur, "android", 0L)
         if (effPc.isHardLocked || effAn.isHardLocked) {
-            toast("Lv.3 ハードブロック中のため、終了時刻まで停止できません。")
+            toast("Lv.3 のブロック中は、終わる時刻まで止められません。")
             return
         }
         val needsLv2 = (effPc.isActive && effPc.level == 2) || (effAn.isActive && effAn.level == 2)
         if (needsLv2) {
-            showLv2ChallengeDialog("Lv.2 ブロックを停止するには下のフレーズを手入力してください：") {
+            showLv2ChallengeDialog("Lv.2 のブロックを止めるには、下の言葉を手で入力してください：") {
                 val next = repo.getState().deepCopy()
                 next.manualSession.active = false
                 next.manualSession.expiresAt = 0L
-                pushUpdatedState(next, "手動ブロックを停止しました", lv2ChallengePassed = true)
+                pushUpdatedState(next, "手動のブロックを止めました", lv2ChallengePassed = true)
             }
             return
         }
         val next = cur.deepCopy()
         next.manualSession.active = false
         next.manualSession.expiresAt = 0L
-        pushUpdatedState(next, "手動ブロックを停止しました", lv2ChallengePassed = false)
+        pushUpdatedState(next, "手動のブロックを止めました", lv2ChallengePassed = false)
     }
 
     private fun applyScheduleChangeWithLv2Check(proposed: GuardState, msg: String) {
@@ -803,9 +982,9 @@ class MainActivity : AppCompatActivity() {
         val lblPhrase = TextView(this).apply {
             text = target.text
             textSize = 16f
-            setTypeface(null, Typeface.BOLD)
-            setLineSpacing(0f, 1.25f)
-            setTextColor(Color.parseColor("#E0763C"))
+            typeface = Fg.serif
+            setLineSpacing(0f, 1.3f)
+            setTextColor(Fg.ink)
             setPadding(0, dp(4), 0, dp(2))
         }
         val lblAuthor = TextView(this).apply {
@@ -843,8 +1022,8 @@ class MainActivity : AppCompatActivity() {
         box.addView(input)
         box.addView(lblHint)
 
-        AlertDialog.Builder(this)
-            .setTitle("Lv.2 確認")
+        AlertDialog.Builder(this, android.R.style.Theme_Material_Light_Dialog_Alert)
+            .setTitle("Lv.2 の確認")
             .setView(box)
             .setPositiveButton("確認して実行") { _, _ ->
                 if (Quotes.matches(input.text.toString(), target)) {
@@ -853,7 +1032,7 @@ class MainActivity : AppCompatActivity() {
                     toast("入力が一致しませんでした")
                 }
             }
-            .setNegativeButton("キャンセル", null)
+            .setNegativeButton("やめる", null)
             .show()
     }
 
@@ -862,7 +1041,7 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(14), dp(20), dp(8))
         }
-        val inName = EditText(this).apply { setText("夜間デジタルデトックス"); hint = "ルール名" }
+        val inName = EditText(this).apply { setText("夜のデジタルデトックス"); hint = "ルール名" }
         val inStart = EditText(this).apply { setText("23:00"); hint = "開始 (例: 23:00)" }
         val inEnd = EditText(this).apply { setText("07:00"); hint = "終了 (例: 07:00)" }
         val spnLv = Spinner(this).apply {
@@ -895,8 +1074,8 @@ class MainActivity : AppCompatActivity() {
         box.addView(dayRow1)
         box.addView(dayRow2)
 
-        AlertDialog.Builder(this)
-            .setTitle("新しいスケジュールを追加")
+        AlertDialog.Builder(this, android.R.style.Theme_Material_Light_Dialog_Alert)
+            .setTitle("スケジュールを追加")
             .setView(box)
             .setPositiveButton("追加") { _, _ ->
                 val days = mutableListOf<Int>()
@@ -922,7 +1101,7 @@ class MainActivity : AppCompatActivity() {
                 next.schedules.add(rule)
                 pushUpdatedState(next, "スケジュールを追加しました")
             }
-            .setNegativeButton("キャンセル", null)
+            .setNegativeButton("やめる", null)
             .show()
     }
 
@@ -936,149 +1115,151 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun updateLevelButtons() {
-        val btns = listOf(Pair(btnLv1, 1), Pair(btnLv2, 2), Pair(btnLv3, 3))
-        for ((b, lv) in btns) {
-            val active = selectedLevel == lv
-            val borderCol = if (active) levelColor(lv) else Color.parseColor("#2B384F")
-            val bgCol = if (active) Color.parseColor("#243147") else Color.parseColor("#111722")
-            b.background = GradientDrawable().apply {
-                setColor(bgCol)
-                cornerRadius = dp(10).toFloat()
-                setStroke(dp(2), borderCol)
-            }
-            b.setTextColor(if (active) levelColor(lv) else Color.parseColor("#B5C0D4"))
-        }
-    }
-
-    private fun levelColor(lv: Int): Int = when (lv) {
-        1 -> Color.parseColor("#F5B942")
-        2 -> Color.parseColor("#F57642")
-        3 -> Color.parseColor("#EF4455")
-        else -> Color.parseColor("#6EE7B7")
-    }
-
-    private fun makeDeviceTile(deviceTitle: String): LinearLayout = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        background = GradientDrawable().apply {
-            setColor(Color.parseColor("#111722"))
-            cornerRadius = dp(10).toFloat()
-            setStroke(dp(1), Color.parseColor("#243045"))
-        }
-        setPadding(dp(12), dp(10), dp(12), dp(10))
-        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        addView(TextView(this@MainActivity).apply {
-            text = deviceTitle
-            textSize = 11.5f
-            setTextColor(Color.parseColor("#8FA0BE"))
-            setTypeface(null, Typeface.BOLD)
-        })
-    }
-
-    private fun makeSpinnerBg(): GradientDrawable = GradientDrawable().apply {
-        setColor(Color.parseColor("#111722"))
-        cornerRadius = dp(9).toFloat()
-        setStroke(dp(1), Color.parseColor("#2C3952"))
-    }
-
-    private fun makeLevelBtn(label: String, lv: Int): Button = Button(this).apply {
-        text = label
-        isAllCaps = false
-        textSize = 13.5f
-        setTypeface(null, Typeface.BOLD)
-        layoutParams = LinearLayout.LayoutParams(0, dp(56), 1f).apply {
-            marginEnd = if (lv < 3) dp(6) else 0
-        }
-        setOnClickListener {
-            selectedLevel = lv
-            updateLevelButtons()
-        }
-    }
+    // ===== 部品 =====
 
     private fun makeCard(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        background = GradientDrawable().apply {
-            setColor(Color.parseColor("#171E2B"))
-            cornerRadius = dp(14).toFloat()
-            setStroke(dp(1), Color.parseColor("#263147"))
-        }
-        setPadding(dp(14), dp(12), dp(14), dp(14))
-        layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { bottomMargin = dp(12) }
+        background = Fg.rounded(Fg.paper, dp(22).toFloat())
+        setPadding(dp(18), dp(18), dp(18), dp(18))
+        layoutParams = lp(bottom = dp(14))
     }
 
     private fun makeSectionTitle(t: String): TextView = TextView(this).apply {
         text = t
-        setTextColor(Color.parseColor("#E2EAF7"))
-        textSize = 15f
+        setTextColor(Fg.ink)
+        textSize = 19f
+        typeface = Fg.serif
+        setPadding(0, 0, 0, dp(12))
+    }
+
+    private fun makeGroupTitle(t: String): TextView = TextView(this).apply {
+        text = t
+        setTextColor(Fg.ink)
+        textSize = 13f
         setTypeface(null, Typeface.BOLD)
-        setPadding(0, 0, 0, dp(8))
+        setPadding(0, dp(10), 0, dp(8))
     }
 
     private fun makeLabel(t: String): TextView = TextView(this).apply {
         text = t
-        setTextColor(Color.parseColor("#95A4BF"))
-        textSize = 11.5f
-        setPadding(0, dp(4), 0, dp(4))
+        setTextColor(Fg.sub)
+        textSize = 12f
+        setPadding(0, dp(10), 0, dp(4))
     }
 
-    private fun makeSubText(t: String): TextView = TextView(this).apply {
+    private fun makeSub(t: String, size: Float): TextView = TextView(this).apply {
         text = t
-        setTextColor(Color.parseColor("#95A4BF"))
-        textSize = 12f
-        setPadding(0, dp(2), 0, dp(6))
+        setTextColor(Fg.sub)
+        textSize = size
+    }
+
+    private fun makeDeviceTile(deviceTitle: String): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        background = Fg.rounded(Fg.paper, dp(14).toFloat())
+        setPadding(dp(14), dp(12), dp(14), dp(12))
+        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        addView(makeSub(deviceTitle, 12f))
+    }
+
+    private fun makeDeviceState(): TextView = TextView(this).apply {
+        text = "ブロックなし"
+        textSize = 15f
+        setTypeface(null, Typeface.BOLD)
+        setTextColor(Fg.ink)
+        setPadding(0, dp(2), 0, dp(2))
+    }
+
+    private fun makeLevelButton(lv: Int): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(12), dp(12), dp(12), dp(10))
+        isClickable = true
+        isFocusable = true
+        val bars = LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.BOTTOM
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(26))
+        }
+        val heights = intArrayOf(10, 18, 26)
+        for (h in heights) {
+            bars.addView(View(this@MainActivity).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(8), dp(h)).apply { marginEnd = dp(3) }
+            })
+        }
+        addView(bars)
+        addView(View(this@MainActivity).apply { layoutParams = LinearLayout.LayoutParams(1, 0, 1f) })
+        addView(TextView(this@MainActivity).apply {
+            text = Fg.lvName(lv)
+            textSize = 14f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Fg.ink)
+        })
+        setOnClickListener {
+            selectedLevel = lv
+            renderStartControls()
+        }
+    }
+
+    private fun makeChip(label: String, onClick: () -> Unit): TextView = TextView(this).apply {
+        text = label
+        textSize = 14f
+        gravity = Gravity.CENTER
+        setPadding(dp(16), 0, dp(16), 0)
+        isClickable = true
+        isFocusable = true
+        setOnClickListener { onClick() }
     }
 
     private fun makeInput(hintText: String, password: Boolean): EditText = EditText(this).apply {
         hint = hintText
-        setHintTextColor(Color.parseColor("#64748B"))
-        setTextColor(Color.WHITE)
-        textSize = 14f
+        setHintTextColor(Fg.sub)
+        setTextColor(Fg.ink)
+        textSize = 15f
         if (password) {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
         }
-        background = GradientDrawable().apply {
-            setColor(Color.parseColor("#101622"))
-            cornerRadius = dp(9).toFloat()
-            setStroke(dp(1), Color.parseColor("#2C3952"))
-        }
-        setPadding(dp(12), dp(10), dp(12), dp(10))
+        background = Fg.rounded(Fg.white, dp(10).toFloat(), dp(1), Fg.line)
+        setPadding(dp(12), dp(12), dp(12), dp(12))
+        layoutParams = lp(bottom = dp(4))
     }
 
-    private fun makeButton(label: String, hexBg: String, onClick: () -> Unit): Button = Button(this).apply {
+    private fun makePrimaryButton(label: String, onClick: () -> Unit): Button = Button(this).apply {
         text = label
         isAllCaps = false
-        setTextColor(Color.WHITE)
-        textSize = 14f
+        setTextColor(Fg.paper)
+        textSize = 15f
         setTypeface(null, Typeface.BOLD)
-        background = GradientDrawable().apply {
-            setColor(Color.parseColor(hexBg))
-            cornerRadius = dp(10).toFloat()
-        }
-        layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            dp(44)
-        ).apply { topMargin = dp(8) }
+        stateListAnimator = null
+        background = Fg.primary(Fg.sched, dp(14).toFloat(), dp(4))
+        layoutParams = lp(h = dp(52), top = dp(10))
         setOnClickListener { onClick() }
     }
 
-    private fun makeSmallButton(label: String, hexBg: String, onClick: () -> Unit): Button = Button(this).apply {
+    private fun makeStrongButton(label: String, onClick: () -> Unit): Button = Button(this).apply {
         text = label
         isAllCaps = false
-        setTextColor(Color.WHITE)
-        textSize = 11.5f
-        background = GradientDrawable().apply {
-            setColor(Color.parseColor(hexBg))
-            cornerRadius = dp(8).toFloat()
-        }
-        layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-            dp(34)
-        ).apply { marginStart = dp(6) }
-        setPadding(dp(10), 0, dp(10), 0)
+        setTextColor(Fg.ink)
+        textSize = 15f
+        setTypeface(null, Typeface.BOLD)
+        stateListAnimator = null
+        background = Fg.rounded(Fg.white, dp(14).toFloat(), dp(2), Fg.ink)
         setOnClickListener { onClick() }
+    }
+
+    private fun makeLineButton(label: String, small: Boolean = false, onClick: () -> Unit): Button = Button(this).apply {
+        text = label
+        isAllCaps = false
+        textSize = if (small) 13f else 14f
+        stateListAnimator = null
+        minHeight = 0
+        minimumHeight = 0
+        styleLineButton(this, true)
+        layoutParams = lp(h = dp(48), top = dp(10))
+        setOnClickListener { onClick() }
+    }
+
+    private fun styleLineButton(b: Button, enabled: Boolean) {
+        b.setTextColor(if (enabled) Fg.ink else Fg.sub)
+        b.background = Fg.rounded(Color.TRANSPARENT, dp(14).toFloat(), dp(1), Fg.line, if (enabled) 0f else dp(4).toFloat())
     }
 
     private fun toast(msg: String) {
