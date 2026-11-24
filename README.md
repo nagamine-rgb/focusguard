@@ -24,6 +24,17 @@ Windows PC と Android スマホのブラウザを **段階的な強度（Lv.1�
 
 ---
 
+## 0. Windows へのインストール（おすすめ）
+
+1. [Releases（Latest）](https://github.com/nagamine-rgb/focusguard/releases/latest) から `FocusGuard-Setup.exe` をダウンロードして実行します。
+   - 「Windows によって PC が保護されました」と出たら「詳細情報」→「実行」で進めます（個人のアプリで電子署名がないため）。
+   - 管理者のパスワードは不要です。`%LOCALAPPDATA%\Programs\FocusGuard` に入り、スタートメニューに FocusGuard が追加されます。
+2. **更新**するときも、新しい `FocusGuard-Setup.exe` を実行するだけです。設定とブロックの状態はそのまま残ります。
+   - FocusGuard が起動中だと止まるので、タスクトレイのアイコンから終了してから実行してください（Lv.3 中は終了できないので、ブロックが終わってから）。
+3. やめるときは、Windows の「設定 → アプリ」から FocusGuard をアンインストールします。
+
+ダウンロードした `FocusGuard-Setup.exe` は、インストール後に消してかまいません。
+
 ## 1. まずはローカルで今すぐ動作確認（Windows PC）
 
 1. `windows/FocusGuard.exe` をダブルクリックして起動します。

@@ -38,6 +38,19 @@ jobs:
           Copy-Item web/index.html dist-win/web/index.html
           Compress-Archive -Path dist-win/* -DestinationPath FocusGuard-Windows.zip -Force
 
+      # インストーラー（FocusGuard-Setup.exe）を Inno Setup で作る
+      - name: Build installer
+        shell: powershell
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress | Out-Null
+          }
+          if (-not (Test-Path $iscc)) { throw "Inno Setup (ISCC.exe) が見つかりません" }
+          & $iscc "/DAppVersion=1.0.${{ github.run_number }}" windows\installer.iss
+          if ($LASTEXITCODE -ne 0) { throw "インストーラーの作成に失敗しました" }
+          Get-Item FocusGuard-Setup.exe | Select-Object Name, Length
+
       - name: Upload Windows Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -45,6 +58,7 @@ jobs:
           path: |
             windows/FocusGuard.exe
             FocusGuard-Windows.zip
+            FocusGuard-Setup.exe
 
   build-android:
     runs-on: ubuntu-latest
@@ -133,12 +147,13 @@ jobs:
             FocusGuard の最新ビルド（Windows PC 版 ＆ Android スマホ版）です。
 
             ### ダウンロード
-            - **Windows PC 版**: `FocusGuard.exe`（単体実行）または `FocusGuard-Windows.zip`（ローカル Web UI 同梱）
+            - **Windows PC 版**: `FocusGuard-Setup.exe`（おすすめ。実行するとインストール・更新されます）。`FocusGuard.exe` は単体で動かしたい人向け
             - **Android スマホ版**: `FocusGuard.apk`（スマホでタップしてインストール）
 
             ### Web リモコン
             - https://nagamine-rgb.github.io/focusguard/
           files: |
+            dist/FocusGuard-Setup.exe
             dist/FocusGuard.exe
             dist/FocusGuard-Windows.zip
             dist/FocusGuard.apk
