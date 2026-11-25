@@ -88,6 +88,8 @@ namespace FocusGuard
 
             BuildLayout();
             LoadSettingsToUi();
+            // exe の場所が変わっても自動起動できるよう、起動のたびに今の場所で登録し直す
+            if (_sync.GetSettings().StartWithWindows) ApplyWindowsStartup(true);
             RefreshStateUi(_sync.GetState());
 
             _sync.StateChanged += (st) => BeginInvokeSafe(() => RefreshStateUi(st));
