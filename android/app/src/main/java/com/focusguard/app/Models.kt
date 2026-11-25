@@ -63,8 +63,37 @@ data class GuardState(
     var pcHeartbeat: DeviceHeartbeat = DeviceHeartbeat(),
     var androidHeartbeat: DeviceHeartbeat = DeviceHeartbeat(),
     /** ブロック中でも開けるサイト（ホワイトリスト）。例: example.com */
-    var allowedSites: MutableList<String> = mutableListOf()
+    var allowedSites: MutableList<String> = mutableListOf(),
+    /** 手動のブロック。PC とスマホで別々に持つ（片方を始めても、もう片方は変わらない） */
+    var manualPc: ManualSession = ManualSession(active = false, target = "pc"),
+    var manualAndroid: ManualSession = ManualSession(active = false, target = "android")
 ) {
+    fun sessionFor(device: String): ManualSession = if (device == "pc") manualPc else manualAndroid
+
+    fun setSession(device: String, level: Int, startedAt: Long, expiresAt: Long) {
+        val s = ManualSession(active = true, level = level, target = device, startedAt = startedAt, expiresAt = expiresAt)
+        if (device == "pc") manualPc = s else manualAndroid = s
+    }
+
+    /** 手動ブロックを始める。target が all なら両方、pc / android ならその端末だけ */
+    fun startManual(level: Int, target: String, startedAt: Long, expiresAt: Long) {
+        for (dev in listOf("pc", "android")) {
+            if (RuleEngine.targetMatches(target, dev)) setSession(dev, level, startedAt, expiresAt)
+        }
+    }
+
+    /** 期限切れの手動ブロックを止める。変わったら true */
+    fun expireManual(nowMs: Long): Boolean {
+        var changed = false
+        for (s in listOf(manualPc, manualAndroid, manualSession)) {
+            if (s.active && s.expiresAt > 0L && s.expiresAt <= nowMs) {
+                s.active = false
+                changed = true
+            }
+        }
+        return changed
+    }
+
     fun toJson(): JSONObject {
         val root = JSONObject()
         root.put("version", version)
@@ -77,6 +106,17 @@ data class GuardState(
         ms.put("startedAt", manualSession.startedAt)
         ms.put("expiresAt", manualSession.expiresAt)
         root.put("manualSession", ms)
+        fun sessionJson(s: ManualSession, dev: String) = JSONObject().apply {
+            put("active", s.active)
+            put("level", s.level)
+            put("target", dev)
+            put("startedAt", s.startedAt)
+            put("expiresAt", s.expiresAt)
+        }
+        root.put("manualSessions", JSONObject().apply {
+            put("pc", sessionJson(manualPc, "pc"))
+            put("android", sessionJson(manualAndroid, "android"))
+        })
 
         val schedArr = JSONArray()
         for (s in schedules) {
@@ -141,6 +181,26 @@ data class GuardState(
                     startedAt = ms.optLong("startedAt", 0L),
                     expiresAt = ms.optLong("expiresAt", 0L)
                 )
+            }
+
+            fun parseSession(o: JSONObject?, dev: String): ManualSession = if (o == null) ManualSession(active = false, target = dev) else ManualSession(
+                active = o.optBoolean("active", false),
+                level = o.optInt("level", 2).coerceIn(1, 3),
+                target = dev,
+                startedAt = o.optLong("startedAt", 0L),
+                expiresAt = o.optLong("expiresAt", 0L)
+            )
+            obj.optJSONObject("manualSessions")?.let { m ->
+                st.manualPc = parseSession(m.optJSONObject("pc"), "pc")
+                st.manualAndroid = parseSession(m.optJSONObject("android"), "android")
+            }
+            // 古い版が書いた「1枠」の手動ブロックを、対象の端末の枠へ移す
+            if (st.manualSession.active) {
+                val legacy = st.manualSession
+                for (dev in listOf("pc", "android")) {
+                    if (RuleEngine.targetMatches(legacy.target, dev)) st.setSession(dev, legacy.level, legacy.startedAt, legacy.expiresAt)
+                }
+                legacy.active = false
             }
 
             obj.optJSONArray("schedules")?.let { arr ->

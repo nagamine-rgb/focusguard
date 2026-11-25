@@ -243,14 +243,7 @@ namespace FocusGuard
         {
             var st = _sync.GetState();
             long now = TimeUtil.NowMs();
-            st.manualSession = new ManualSession
-            {
-                active = true,
-                level = level,
-                target = "all",
-                startedAt = now,
-                expiresAt = now + (long)minutes * 60 * 1000
-            };
+            st.StartManual(level, "all", now, now + (long)minutes * 60 * 1000);
             _sync.LocalSnoozeUntilMs = 0;
             string err;
             if (!_sync.UpdateState(st, out err))

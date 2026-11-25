@@ -172,11 +172,8 @@ namespace FocusGuard
                     return false;
                 }
 
-                // Auto-clear expired manual session
-                if (nextState.manualSession.active && nextState.manualSession.expiresAt > 0 && nextState.manualSession.expiresAt <= TimeUtil.NowMs())
-                {
-                    nextState.manualSession.active = false;
-                }
+                // 期限切れの手動ブロックを止める
+                nextState.ExpireManual(TimeUtil.NowMs());
 
                 nextState.updatedAt = TimeUtil.NowMs();
                 _state = nextState;
@@ -220,10 +217,8 @@ namespace FocusGuard
                     bool expiredNow = false;
                     lock (_lock)
                     {
-                        if (_state.manualSession != null && _state.manualSession.active &&
-                            _state.manualSession.expiresAt > 0 && _state.manualSession.expiresAt <= TimeUtil.NowMs())
+                        if (_state.ExpireManual(TimeUtil.NowMs()))
                         {
-                            _state.manualSession.active = false;
                             _state.updatedAt = TimeUtil.NowMs();
                             SaveStateToDisk(_state);
                             expiredNow = true;
@@ -454,7 +449,7 @@ namespace FocusGuard
                 string innerJson = ser.Serialize(dict["state"]);
                 return ser.Deserialize<GuardState>(innerJson);
             }
-            if (dict.ContainsKey("manualSession") || dict.ContainsKey("schedules"))
+            if (dict.ContainsKey("manualSession") || dict.ContainsKey("manualSessions") || dict.ContainsKey("schedules"))
             {
                 return ser.Deserialize<GuardState>(body);
             }

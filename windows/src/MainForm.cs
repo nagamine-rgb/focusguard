@@ -61,6 +61,7 @@ namespace FocusGuard
         private TextBox _txtBrowsers;
         private NumericUpDown _numLv1Wait, _numLv1Allow, _numLv2Allow;
         private CheckBox _chkStartup;
+        private CheckBox _chkTopMost;
 
         private bool _forceExit;
 
@@ -558,7 +559,7 @@ namespace FocusGuard
             sites.Controls.Add(btnSaveSites);
             page.Controls.Add(sites);
 
-            var apps = MakeCard(364);
+            var apps = MakeCard(396);
             apps.Controls.Add(MakeLabel("止めるアプリと待ち時間", Theme.Serif(12f), Theme.Ink, 18, 14, 404, 28));
             apps.Controls.Add(MakeLabel("止めるプロセス名（カンマ区切り）", Theme.UI(8.5f), Theme.Sub, 18, 52, 400, 18));
             _txtBrowsers = MakeTextBox(18, 72, 404);
@@ -589,9 +590,30 @@ namespace FocusGuard
                 Font = Theme.UI(9.5f)
             };
 
-            _btnSaveSettings = new PillButton("設定を保存", PillKind.Primary) { Location = new Point(18, 298), Size = new Size(404, 48), BackColor = Theme.Paper };
+            _chkTopMost = new CheckBox
+            {
+                Text = "このウィンドウを常に最前面に表示する",
+                Location = new Point(18, 286),
+                Size = new Size(404, 28),
+                BackColor = Theme.Paper,
+                ForeColor = Theme.Ink,
+                Font = Theme.UI(9.5f)
+            };
+            // 保存ボタンを待たずに、すぐ反映して覚えておく
+            _chkTopMost.CheckedChanged += (s, e) =>
+            {
+                TopMost = _chkTopMost.Checked;
+                var cfgNow = _sync.GetSettings();
+                if (cfgNow.AlwaysOnTop != _chkTopMost.Checked)
+                {
+                    cfgNow.AlwaysOnTop = _chkTopMost.Checked;
+                    _sync.SaveSettings(cfgNow);
+                }
+            };
+
+            _btnSaveSettings = new PillButton("設定を保存", PillKind.Primary) { Location = new Point(18, 330), Size = new Size(404, 48), BackColor = Theme.Paper };
             _btnSaveSettings.Click += OnSaveSettings;
-            apps.Controls.AddRange(new Control[] { _numLv1Wait, _numLv1Allow, _numLv2Allow, _chkStartup, _btnSaveSettings });
+            apps.Controls.AddRange(new Control[] { _numLv1Wait, _numLv1Allow, _numLv2Allow, _chkStartup, _chkTopMost, _btnSaveSettings });
             page.Controls.Add(apps);
             return page;
         }
@@ -641,11 +663,12 @@ namespace FocusGuard
 
                 // 止めるボタン
                 long now = TimeUtil.NowMs();
-                var ms = st.manualSession;
-                bool manualOn = ms != null && ms.active && (ms.expiresAt <= 0 || ms.expiresAt > now);
-                bool lv2Active = (effPc.IsActive && effPc.Level == 2) || (effAndroid.IsActive && effAndroid.Level == 2);
-                _btnStopManual.Enabled = !hardLocked && manualOn;
-                if (hardLocked)
+                bool pcStoppable = GuardState.IsLive(st.SessionFor("pc"), now) && !effPc.IsHardLocked;
+                bool anStoppable = GuardState.IsLive(st.SessionFor("android"), now) && !effAndroid.IsHardLocked;
+                bool manualOn = pcStoppable || anStoppable;
+                bool lv2Active = (pcStoppable && effPc.Level == 2) || (anStoppable && effAndroid.Level == 2);
+                _btnStopManual.Enabled = manualOn;
+                if (hardLocked && !manualOn)
                 {
                     long lockEnd = Math.Max(
                         effPc.IsHardLocked && effPc.EndsAtMs.HasValue ? effPc.EndsAtMs.Value : 0,
@@ -654,7 +677,8 @@ namespace FocusGuard
                 }
                 else if (manualOn)
                 {
-                    _btnStopManual.Text = lv2Active ? "手動のブロックを止める（名言の入力あり）" : "手動のブロックを止める";
+                    string which = pcStoppable && anStoppable ? "" : (pcStoppable ? "PC の" : "スマホの");
+                    _btnStopManual.Text = string.Format(lv2Active ? "{0}手動のブロックを止める（名言の入力あり）" : "{0}手動のブロックを止める", which);
                 }
                 else
                 {
@@ -786,6 +810,8 @@ namespace FocusGuard
             _txtSupabaseKey.Text = cfg.SupabaseAnonKey ?? "";
             _txtSyncKey.Text = cfg.SyncKey ?? "";
             _chkStartup.Checked = cfg.StartWithWindows;
+            _chkTopMost.Checked = cfg.AlwaysOnTop;
+            TopMost = cfg.AlwaysOnTop;
         }
 
         private void RefreshStateUi(GuardState st)
@@ -851,15 +877,9 @@ namespace FocusGuard
 
             var st = _sync.GetState();
             long now = TimeUtil.NowMs();
-            st.manualSession = new ManualSession
-            {
-                active = true,
-                level = level,
-                target = target,
-                startedAt = now,
-                expiresAt = mins > 0 ? now + (long)mins * 60 * 1000 : 0
-            };
-            _sync.LocalSnoozeUntilMs = 0;
+            // 選んだ端末の枠だけを書き換える（もう片方の端末のブロックはそのまま）
+            st.StartManual(level, target, now, mins > 0 ? now + (long)mins * 60 * 1000 : 0);
+            if (target != "android") _sync.LocalSnoozeUntilMs = 0;
 
             string err;
             if (!_sync.UpdateState(st, out err, false))
@@ -882,18 +902,10 @@ namespace FocusGuard
                 MessageBox.Show("手動で止めるまで続くブロックなので、延ばす必要はありません。", "延長", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
-            long baseMs = Math.Max(TimeUtil.NowMs(), Math.Max(
-                pcLocked ? effPc.EndsAtMs.Value : 0,
-                anLocked ? effAn.EndsAtMs.Value : 0));
-
-            cur.manualSession = new ManualSession
-            {
-                active = true,
-                level = 3,
-                target = pcLocked && anLocked ? "all" : (pcLocked ? "pc" : "android"),
-                startedAt = TimeUtil.NowMs(),
-                expiresAt = baseMs + (long)mins * 60 * 1000
-            };
+            // ロック中の端末それぞれの終了時刻から延ばす（ロックしていない端末は変えない）
+            long now = TimeUtil.NowMs();
+            if (pcLocked) cur.SetSession("pc", 3, now, Math.Max(now, effPc.EndsAtMs.Value) + (long)mins * 60 * 1000);
+            if (anLocked) cur.SetSession("android", 3, now, Math.Max(now, effAn.EndsAtMs.Value) + (long)mins * 60 * 1000);
             string err;
             if (!_sync.UpdateState(cur, out err, false))
                 MessageBox.Show(err, "延ばせません", MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -902,15 +914,22 @@ namespace FocusGuard
         private void OnStopManualClick(object sender, EventArgs e)
         {
             var cur = _sync.GetState();
+            long now = TimeUtil.NowMs();
             var effPc = RuleEngine.Evaluate(cur, "pc", 0);
             var effAn = RuleEngine.Evaluate(cur, "android", 0);
-            if (effPc.IsHardLocked || effAn.IsHardLocked)
+            // 止められるのは、手動ブロック中で Lv.3 のロックがかかっていない端末だけ
+            bool stopPc = GuardState.IsLive(cur.SessionFor("pc"), now) && !effPc.IsHardLocked;
+            bool stopAn = GuardState.IsLive(cur.SessionFor("android"), now) && !effAn.IsHardLocked;
+            if (!stopPc && !stopAn)
             {
-                MessageBox.Show("Lv.3 のブロック中は、終わる時刻まで止められません。", "ロック中", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(effPc.IsHardLocked || effAn.IsHardLocked
+                        ? "Lv.3 のブロック中は、終わる時刻まで止められません。"
+                        : "止められる手動のブロックはありません。",
+                    "止められません", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
-            bool needsLv2Challenge = (effPc.IsActive && effPc.Level == 2) || (effAn.IsActive && effAn.Level == 2);
+            bool needsLv2Challenge = (stopPc && effPc.Level == 2) || (stopAn && effAn.Level == 2);
             bool passed = false;
             if (needsLv2Challenge)
             {
@@ -919,8 +938,8 @@ namespace FocusGuard
             }
 
             var st = _sync.GetState();
-            st.manualSession.active = false;
-            st.manualSession.expiresAt = 0;
+            if (stopPc) { st.SessionFor("pc").active = false; st.SessionFor("pc").expiresAt = 0; }
+            if (stopAn) { st.SessionFor("android").active = false; st.SessionFor("android").expiresAt = 0; }
             string err;
             if (!_sync.UpdateState(st, out err, passed))
             {

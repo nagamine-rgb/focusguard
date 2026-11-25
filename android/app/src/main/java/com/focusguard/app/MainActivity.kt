@@ -582,22 +582,23 @@ class MainActivity : AppCompatActivity() {
         val top = if (effAn.isActive && (!effPc.isActive || effAn.level > effPc.level)) effAn else effPc
         updateDial(st, top)
 
-        val ms = st.manualSession
-        val now = System.currentTimeMillis()
-        val manualOn = ms.active && (ms.expiresAt <= 0L || ms.expiresAt > now)
-        val lv2Active = (effPc.isActive && effPc.level == 2) || (effAn.isActive && effAn.level == 2)
-        btnStopManual.isEnabled = !locked && manualOn
+        val pcStoppable = RuleEngine.isLive(st.manualPc) && !effPc.isHardLocked
+        val anStoppable = RuleEngine.isLive(st.manualAndroid) && !effAn.isHardLocked
+        val manualOn = pcStoppable || anStoppable
+        val lv2Active = (pcStoppable && effPc.level == 2) || (anStoppable && effAn.level == 2)
+        val which = if (pcStoppable && anStoppable) "" else if (pcStoppable) "PC の" else "スマホの"
+        btnStopManual.isEnabled = manualOn
         styleLineButton(btnStopManual, btnStopManual.isEnabled)
         btnStopManual.text = when {
-            locked -> {
+            locked && !manualOn -> {
                 val lockEnd = maxOf(
                     if (effPc.isHardLocked) effPc.endsAtMs ?: 0L else 0L,
                     if (effAn.isHardLocked) effAn.endsAtMs ?: 0L else 0L
                 )
                 if (lockEnd > 0L) "ブロックを止める（${clock(lockEnd)} から）" else "ブロックを止める（ロック中）"
             }
-            manualOn && lv2Active -> "手動のブロックを止める（名言の入力あり）"
-            manualOn -> "手動のブロックを止める"
+            manualOn && lv2Active -> "${which}手動のブロックを止める（名言の入力あり）"
+            manualOn -> "${which}手動のブロックを止める"
             else -> "手動のブロックはありません"
         }
 
@@ -912,14 +913,9 @@ class MainActivity : AppCompatActivity() {
 
         val next = repo.getState().deepCopy()
         val now = System.currentTimeMillis()
-        next.manualSession = ManualSession(
-            active = true,
-            level = selectedLevel,
-            target = selectedTarget,
-            startedAt = now,
-            expiresAt = if (mins > 0) now + mins * 60_000L else 0L
-        )
-        repo.setSnoozeUntilMs(0L)
+        // 選んだ端末の枠だけを書き換える（もう片方の端末のブロックはそのまま）
+        next.startManual(selectedLevel, selectedTarget, now, if (mins > 0) now + mins * 60_000L else 0L)
+        if (selectedTarget != "pc") repo.setSnoozeUntilMs(0L)
         pushUpdatedState(next, "ブロックを始めました")
     }
 
@@ -935,19 +931,11 @@ class MainActivity : AppCompatActivity() {
             toast("手動で止めるまで続くブロックなので、延ばす必要はありません")
             return
         }
-        val base = maxOf(
-            System.currentTimeMillis(),
-            if (pcLocked) effPc.endsAtMs ?: 0L else 0L,
-            if (anLocked) effAn.endsAtMs ?: 0L else 0L
-        )
+        // ロック中の端末それぞれの終了時刻から延ばす（ロックしていない端末は変えない）
+        val now = System.currentTimeMillis()
         val next = cur.deepCopy()
-        next.manualSession = ManualSession(
-            active = true,
-            level = 3,
-            target = if (pcLocked && anLocked) "all" else if (pcLocked) "pc" else "android",
-            startedAt = System.currentTimeMillis(),
-            expiresAt = base + mins * 60_000L
-        )
+        if (pcLocked) next.setSession("pc", 3, now, maxOf(now, effPc.endsAtMs ?: 0L) + mins * 60_000L)
+        if (anLocked) next.setSession("android", 3, now, maxOf(now, effAn.endsAtMs ?: 0L) + mins * 60_000L)
         pushUpdatedState(next, "${mins}分延ばしました")
     }
 
@@ -955,24 +943,25 @@ class MainActivity : AppCompatActivity() {
         val cur = repo.getState()
         val effPc = RuleEngine.evaluate(cur, "pc", 0L)
         val effAn = RuleEngine.evaluate(cur, "android", 0L)
-        if (effPc.isHardLocked || effAn.isHardLocked) {
-            toast("Lv.3 のブロック中は、終わる時刻まで止められません。")
+        // 止められるのは、手動ブロック中で Lv.3 のロックがかかっていない端末だけ
+        val stopPc = RuleEngine.isLive(cur.manualPc) && !effPc.isHardLocked
+        val stopAn = RuleEngine.isLive(cur.manualAndroid) && !effAn.isHardLocked
+        if (!stopPc && !stopAn) {
+            toast(if (effPc.isHardLocked || effAn.isHardLocked) "Lv.3 のブロック中は、終わる時刻まで止められません。" else "止められる手動のブロックはありません。")
             return
         }
-        val needsLv2 = (effPc.isActive && effPc.level == 2) || (effAn.isActive && effAn.level == 2)
+        fun stopped(base: GuardState): GuardState = base.deepCopy().apply {
+            if (stopPc) { manualPc.active = false; manualPc.expiresAt = 0L }
+            if (stopAn) { manualAndroid.active = false; manualAndroid.expiresAt = 0L }
+        }
+        val needsLv2 = (stopPc && effPc.level == 2) || (stopAn && effAn.level == 2)
         if (needsLv2) {
             showLv2ChallengeDialog("Lv.2 のブロックを止めるには、下の言葉を手で入力してください：") {
-                val next = repo.getState().deepCopy()
-                next.manualSession.active = false
-                next.manualSession.expiresAt = 0L
-                pushUpdatedState(next, "手動のブロックを止めました", lv2ChallengePassed = true)
+                pushUpdatedState(stopped(repo.getState()), "手動のブロックを止めました", lv2ChallengePassed = true)
             }
             return
         }
-        val next = cur.deepCopy()
-        next.manualSession.active = false
-        next.manualSession.expiresAt = 0L
-        pushUpdatedState(next, "手動のブロックを止めました", lv2ChallengePassed = false)
+        pushUpdatedState(stopped(cur), "手動のブロックを止めました", lv2ChallengePassed = false)
     }
 
     private fun applyScheduleChangeWithLv2Check(proposed: GuardState, msg: String, successToast: String = "スケジュールを更新しました") {

@@ -10,6 +10,9 @@ object RuleEngine {
         return t.isEmpty() || t == "all" || t == deviceType.lowercase()
     }
 
+    fun isLive(ms: ManualSession, nowMs: Long = System.currentTimeMillis()): Boolean =
+        ms.active && (ms.expiresAt <= 0L || ms.expiresAt > nowMs)
+
     fun evaluate(state: GuardState, deviceType: String, snoozeUntilMs: Long): EffectiveBlockState {
         val nowMs = System.currentTimeMillis()
         val nowCal = Calendar.getInstance()
@@ -18,14 +21,14 @@ object RuleEngine {
         var bestReason = "待機中"
         var bestEndsAt: Long? = null
 
-        val ms = state.manualSession
-        if (ms.active && targetMatches(ms.target, deviceType)) {
-            val notExpired = ms.expiresAt <= 0L || ms.expiresAt > nowMs
-            if (notExpired) {
-                bestLevel = ms.level
-                bestReason = "手動集中モード"
-                bestEndsAt = if (ms.expiresAt > 0L) ms.expiresAt else null
-            }
+        // 手動ブロック（端末ごと）。古い版の「1枠」が残っていればそれも見る
+        val sessions = mutableListOf(state.sessionFor(deviceType))
+        if (targetMatches(state.manualSession.target, deviceType)) sessions.add(state.manualSession)
+        for (ms in sessions) {
+            if (!isLive(ms, nowMs) || ms.level <= bestLevel) continue
+            bestLevel = ms.level
+            bestReason = "手動集中モード"
+            bestEndsAt = if (ms.expiresAt > 0L) ms.expiresAt else null
         }
 
         for (rule in state.schedules) {
