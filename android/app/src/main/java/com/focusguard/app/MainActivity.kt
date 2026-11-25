@@ -78,6 +78,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var scheduleContainer: LinearLayout
     private lateinit var txtTargetAppsSummary: TextView
     private lateinit var inSites: EditText
+
+    // 累計
+    private lateinit var txtStatsMonth: TextView
+    private lateinit var txtStatsLast: TextView
+    private lateinit var txtStatsNote: TextView
+    private lateinit var exContainer: LinearLayout
+    private var exSignature: String? = null
     private var scheduleSignature: String? = null
 
     // 初期設定（権限と Supabase）
@@ -263,6 +270,42 @@ class MainActivity : AppCompatActivity() {
         dualRow.addView(pcBox); dualRow.addView(anBox)
         root.addView(dualRow)
 
+        // 今月のブロック時間（PC とスマホで共通の1つの時間）
+        val statsCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = Fg.rounded(Fg.paper, dp(14).toFloat())
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            layoutParams = lp(bottom = dp(10))
+        }
+        val statsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.BOTTOM }
+        val statsMain = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        statsMain.addView(makeSub("今月のブロック時間", 12f))
+        txtStatsMonth = TextView(this).apply {
+            text = "0分"
+            textSize = 26f
+            typeface = Fg.serif
+            setTextColor(Fg.ink)
+        }
+        statsMain.addView(txtStatsMonth)
+        val statsSide = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.END }
+        statsSide.addView(makeSub("先月", 12f).apply { gravity = Gravity.END })
+        txtStatsLast = TextView(this).apply {
+            text = "0分"
+            textSize = 15f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Fg.ink)
+            gravity = Gravity.END
+        }
+        statsSide.addView(txtStatsLast)
+        statsRow.addView(statsMain); statsRow.addView(statsSide)
+        statsCard.addView(statsRow)
+        txtStatsNote = makeSub("", 12f).apply { setPadding(0, dp(4), 0, 0) }
+        statsCard.addView(txtStatsNote)
+        root.addView(statsCard)
+
         btnEndSnooze = makeLineButton("一時的に開けているのを今すぐ終える") {
             repo.setSnoozeUntilMs(0L)
             refreshUiFromCache()
@@ -367,6 +410,17 @@ class MainActivity : AppCompatActivity() {
         root.addView(makeLineButton("スケジュールを追加") { showAddScheduleDialog() }.apply {
             (layoutParams as LinearLayout.LayoutParams).bottomMargin = dp(18)
         })
+
+        // 累計に数えない時間帯
+        val exCard = makeCard()
+        exCard.addView(makeSectionTitle("累計に数えない時間帯"))
+        exCard.addView(makeSub("睡眠や仕事など、ブロックしていても「今月のブロック時間」に数えたくない時間帯です。ブロックそのものには影響しません。", 13f).apply {
+            setPadding(0, 0, 0, dp(8))
+        })
+        exContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        exCard.addView(exContainer)
+        exCard.addView(makeLineButton("時間帯を追加") { showAddExclusionDialog() })
+        root.addView(exCard)
 
         // ブロック中でも開けるサイト（ホワイトリスト）
         val sitesCard = makeCard()
@@ -603,6 +657,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         renderSchedules(st)
+        renderStats(st)
         updateTargetAppsSummary(st)
         if (!inSites.hasFocus()) {
             val text = SiteAllowlist.normalizeList(st.allowedSites).joinToString("\n")
@@ -1058,6 +1113,108 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     toast("入力が一致しませんでした")
                 }
+            }
+            .setNegativeButton("やめる", null)
+            .showStyled()
+    }
+
+    private fun renderStats(st: GuardState) {
+        val now = System.currentTimeMillis()
+        txtStatsMonth.text = BlockStats.formatDuration(BlockStats.monthMs(st, 0, now))
+        txtStatsLast.text = BlockStats.formatDuration(BlockStats.monthMs(st, -1, now))
+        txtStatsNote.text = if (st.statsExclusions.isEmpty()) "PC とスマホのどちらかを止めていた時間（重なりは1回）"
+        else "数えていない時間: " + st.statsExclusions.joinToString("、") { "${it.name.ifBlank { "無題" }}（${BlockStats.describeDays(it.days)} ${it.start}〜${it.end}）" }
+
+        val sig = st.statsExclusions.joinToString("|") { "${it.id},${it.name},${it.start},${it.end},${it.days.joinToString("")}" }
+        if (sig == exSignature) return
+        exSignature = sig
+        exContainer.removeAllViews()
+        if (st.statsExclusions.isEmpty()) {
+            exContainer.addView(makeSub("まだありません。", 13f))
+            return
+        }
+        for (x in st.statsExclusions) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, dp(6), 0, dp(6))
+            }
+            val info = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            info.addView(TextView(this).apply {
+                text = x.name.ifBlank { "無題" }
+                textSize = 15f
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(Fg.ink)
+            })
+            info.addView(makeSub("${BlockStats.describeDays(x.days)} ${x.start}〜${x.end}", 12f))
+            row.addView(info)
+            row.addView(TextView(this).apply {
+                text = "削除"
+                textSize = 13f
+                setTextColor(Fg.sub)
+                gravity = Gravity.CENTER
+                background = Fg.rounded(Color.TRANSPARENT, dp(22).toFloat(), dp(1), Fg.line)
+                layoutParams = LinearLayout.LayoutParams(dp(56), dp(44))
+                isClickable = true
+                isFocusable = true
+                contentDescription = "${x.name}を削除"
+                setOnClickListener {
+                    val next = repo.getState().deepCopy()
+                    next.statsExclusions.removeAll { it.id == x.id }
+                    pushUpdatedState(next, "削除しました")
+                }
+            })
+            exContainer.addView(row)
+        }
+    }
+
+    private fun showAddExclusionDialog() {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(14), dp(20), dp(8))
+        }
+        val inName = EditText(this).apply { setText("睡眠"); hint = "名前" }
+        val inStart = EditText(this).apply { setText("23:00"); hint = "始まり (例: 23:00)" }
+        val inEnd = EditText(this).apply { setText("07:00"); hint = "終わり (例: 07:00)" }
+        val dayChecks = Array(7) { idx ->
+            CheckBox(this).apply { text = dayLabels[idx]; isChecked = true; buttonTintList = ColorStateList.valueOf(Fg.ink) }
+        }
+        val dayRow1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val dayRow2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        for (i in 0..3) dayRow1.addView(dayChecks[i])
+        for (i in 4..6) dayRow2.addView(dayChecks[i])
+        box.addView(TextView(this).apply { text = "名前" })
+        box.addView(inName)
+        box.addView(TextView(this).apply { text = "始まり" })
+        box.addView(inStart)
+        box.addView(TextView(this).apply { text = "終わり（翌日でもOK）" })
+        box.addView(inEnd)
+        box.addView(TextView(this).apply { text = "曜日" })
+        box.addView(dayRow1)
+        box.addView(dayRow2)
+
+        AlertDialog.Builder(this, android.R.style.Theme_Material_Light_Dialog_Alert)
+            .setTitle("累計に数えない時間帯")
+            .setView(box)
+            .setPositiveButton("追加") { _, _ ->
+                val days = mutableListOf<Int>()
+                dayChecks.forEachIndexed { idx, cb -> if (cb.isChecked) days.add(idx) }
+                val start = inStart.text.toString().trim()
+                val end = inEnd.text.toString().trim()
+                if (days.isEmpty() || Fg.parseMin(start) == null || Fg.parseMin(end) == null) {
+                    toast("曜日と、23:00 のような時刻を入れてください")
+                    return@setPositiveButton
+                }
+                val next = repo.getState().deepCopy()
+                next.statsExclusions.add(StatsRule(
+                    id = "ex-" + java.util.UUID.randomUUID().toString().replace("-", "").take(8),
+                    name = inName.text.toString().trim().ifBlank { "数えない時間" },
+                    days = days, start = start, end = end
+                ))
+                pushUpdatedState(next, "追加しました")
             }
             .setNegativeButton("やめる", null)
             .showStyled()

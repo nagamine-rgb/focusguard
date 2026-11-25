@@ -158,6 +158,11 @@ namespace FocusGuard
         public DevicesMap devices { get; set; }
         /// <summary>ブロック中でも開けるサイト（ホワイトリスト）。例: example.com</summary>
         public List<string> allowedSites { get; set; }
+        /// <summary>累計のための記録（BlockStats.cs）</summary>
+        public List<HistoryEntry> blockHistory { get; set; }
+        public List<ScheduleSnapshot> scheduleSnapshots { get; set; }
+        /// <summary>累計に数えない時間帯（睡眠・仕事など）</summary>
+        public List<StatsRule> statsExclusions { get; set; }
 
         public GuardState()
         {
@@ -185,6 +190,9 @@ namespace FocusGuard
             lv2AllowMinutes = 10;
             devices = new DevicesMap();
             allowedSites = new List<string>();
+            blockHistory = new List<HistoryEntry>();
+            scheduleSnapshots = new List<ScheduleSnapshot>();
+            statsExclusions = new List<StatsRule>();
         }
 
         public void EnsureDefaults()
@@ -226,6 +234,9 @@ namespace FocusGuard
             if (devices.pc == null) devices.pc = new DeviceHeartbeat();
             if (devices.android == null) devices.android = new DeviceHeartbeat();
             allowedSites = SiteAllowlist.NormalizeList(allowedSites);
+            if (blockHistory == null) blockHistory = new List<HistoryEntry>();
+            if (scheduleSnapshots == null) scheduleSnapshots = new List<ScheduleSnapshot>();
+            if (statsExclusions == null) statsExclusions = new List<StatsRule>();
         }
 
         /// <summary>端末の手動ブロック（null にならない）</summary>

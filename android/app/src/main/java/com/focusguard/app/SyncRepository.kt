@@ -97,6 +97,8 @@ class SyncRepository private constructor(context: Context) {
         if (blockErr != null) {
             return Pair(false, blockErr)
         }
+        // 累計のための記録（手動ブロックとスケジュールの変化）
+        BlockStats.recordHistory(current, next, System.currentTimeMillis())
         next.expireManual(System.currentTimeMillis())
         next.updatedAt = System.currentTimeMillis()
         saveLocalState(next)

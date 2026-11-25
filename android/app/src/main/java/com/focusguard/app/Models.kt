@@ -66,7 +66,12 @@ data class GuardState(
     var allowedSites: MutableList<String> = mutableListOf(),
     /** 手動のブロック。PC とスマホで別々に持つ（片方を始めても、もう片方は変わらない） */
     var manualPc: ManualSession = ManualSession(active = false, target = "pc"),
-    var manualAndroid: ManualSession = ManualSession(active = false, target = "android")
+    var manualAndroid: ManualSession = ManualSession(active = false, target = "android"),
+    /** 累計のための記録（BlockStats.kt） */
+    var blockHistory: MutableList<HistoryEntry> = mutableListOf(),
+    var scheduleSnapshots: MutableList<ScheduleSnapshot> = mutableListOf(),
+    /** 累計に数えない時間帯（睡眠・仕事など） */
+    var statsExclusions: MutableList<StatsRule> = mutableListOf()
 ) {
     fun sessionFor(device: String): ManualSession = if (device == "pc") manualPc else manualAndroid
 
@@ -148,6 +153,20 @@ data class GuardState(
         root.put("lv1AllowMinutes", lv1AllowMinutes)
         root.put("lv2AllowMinutes", lv2AllowMinutes)
         root.put("allowedSites", JSONArray().apply { SiteAllowlist.normalizeList(allowedSites).forEach { put(it) } })
+        fun ruleJson(r: StatsRule) = JSONObject().apply {
+            if (r.id.isNotEmpty()) put("id", r.id)
+            if (r.name.isNotEmpty()) put("name", r.name)
+            put("days", JSONArray().apply { r.days.forEach { put(it) } })
+            put("start", r.start)
+            put("end", r.end)
+        }
+        root.put("blockHistory", JSONArray().apply {
+            blockHistory.forEach { h -> put(JSONObject().apply { put("d", h.d); put("s", h.s); put("e", h.e) }) }
+        })
+        root.put("scheduleSnapshots", JSONArray().apply {
+            scheduleSnapshots.forEach { sn -> put(JSONObject().apply { put("t", sn.t); put("rules", JSONArray().apply { sn.rules.forEach { put(ruleJson(it)) } }) }) }
+        })
+        root.put("statsExclusions", JSONArray().apply { statsExclusions.forEach { put(ruleJson(it)) } })
 
         val devs = JSONObject()
         devs.put("pc", JSONObject().apply {
@@ -253,6 +272,24 @@ data class GuardState(
             st.lv1WaitSeconds = obj.optInt("lv1WaitSeconds", 15).coerceAtLeast(3)
             st.lv1AllowMinutes = obj.optInt("lv1AllowMinutes", 5).coerceAtLeast(1)
             st.lv2AllowMinutes = obj.optInt("lv2AllowMinutes", 10).coerceAtLeast(1)
+            fun parseRule(o: JSONObject): StatsRule {
+                val days = mutableListOf<Int>()
+                o.optJSONArray("days")?.let { d -> for (j in 0 until d.length()) days.add(d.optInt(j)) }
+                return StatsRule(o.optString("id", ""), o.optString("name", ""), days, o.optString("start", "00:00"), o.optString("end", "00:00"))
+            }
+            obj.optJSONArray("blockHistory")?.let { arr ->
+                st.blockHistory = (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
+                    .map { HistoryEntry(it.optString("d", "pc"), it.optLong("s", 0L), it.optLong("e", 0L)) }.toMutableList()
+            }
+            obj.optJSONArray("scheduleSnapshots")?.let { arr ->
+                st.scheduleSnapshots = (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }.map { o ->
+                    val rules = o.optJSONArray("rules")
+                    ScheduleSnapshot(o.optLong("t", 0L), if (rules == null) emptyList() else (0 until rules.length()).mapNotNull { rules.optJSONObject(it) }.map { parseRule(it) })
+                }.toMutableList()
+            }
+            obj.optJSONArray("statsExclusions")?.let { arr ->
+                st.statsExclusions = (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }.map { parseRule(it) }.toMutableList()
+            }
             obj.optJSONArray("allowedSites")?.let { arr ->
                 st.allowedSites = SiteAllowlist.normalizeList((0 until arr.length()).map { arr.optString(it) }).toMutableList()
             }
