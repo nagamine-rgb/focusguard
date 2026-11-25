@@ -98,6 +98,16 @@
     .device { background: var(--paper); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; }
     .device-state { font-size: 15px; font-weight: 700; }
 
+    /* 累計 */
+    .stats { background: var(--paper); border-radius: 14px; padding: 14px 16px; display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; align-items: end; }
+    .stats-main, .stats-side { display: flex; flex-direction: column; }
+    .stats-side { text-align: right; }
+    .stats-num { font-family: var(--serif); font-weight: 700; font-size: 30px; line-height: 1.2; font-variant-numeric: tabular-nums; }
+    .stats-last { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .stats-note { grid-column: 1 / -1; margin: 4px 0 0; }
+    .ex-item { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--well); }
+    .ex-item:last-child { border-bottom: none; }
+
     /* panels */
     .panel { background: var(--paper); border-radius: 22px; padding: 20px 18px; display: flex; flex-direction: column; gap: 18px; }
     .group { display: flex; flex-direction: column; gap: 10px; }
@@ -264,6 +274,18 @@
       </div>
     </section>
 
+    <section class="stats" aria-label="今月のブロック時間">
+      <div class="stats-main">
+        <span class="sub">今月のブロック時間</span>
+        <span id="statsMonth" class="stats-num">0分</span>
+      </div>
+      <div class="stats-side">
+        <span class="sub">先月</span>
+        <span id="statsLast" class="stats-last">0分</span>
+      </div>
+      <p id="statsNote" class="sub stats-note"></p>
+    </section>
+
     <section class="panel lock-panel" aria-label="ロック中にできること">
       <h2>ロック中にできること</h2>
       <p class="desc">延ばすことと、止めるアプリを増やすことはできます。短くする・弱める・止めることはできません。</p>
@@ -366,6 +388,36 @@
         <button class="icon-btn" aria-label="設定を閉じる" onclick="closeSettings()">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
         </button>
+      </div>
+
+      <div class="panel">
+        <h2>累計に数えない時間帯</h2>
+        <p class="desc">睡眠や仕事など、ブロックしていても「今月のブロック時間」に数えたくない時間帯です。ブロックそのものには影響しません。</p>
+        <div id="exList"></div>
+        <details class="add" style="background: var(--ground)">
+          <summary>時間帯を追加</summary>
+          <div class="form">
+            <div>
+              <label class="field" for="exName">名前</label>
+              <input id="exName" type="text" value="睡眠" />
+            </div>
+            <div class="form-row">
+              <div>
+                <label class="field" for="exStart">始まり</label>
+                <input id="exStart" type="time" value="23:00" />
+              </div>
+              <div>
+                <label class="field" for="exEnd">終わり（翌日でもOK）</label>
+                <input id="exEnd" type="time" value="07:00" />
+              </div>
+            </div>
+            <div>
+              <span class="field">曜日</span>
+              <div id="exDayPicker" class="days"></div>
+            </div>
+            <button class="btn-main" style="--accent: var(--sched)" onclick="addExclusion()">この時間帯を数えない</button>
+          </div>
+        </details>
       </div>
 
       <div class="panel">
@@ -700,6 +752,145 @@
       return target === "pc" ? ["pc"] : target === "android" ? ["android"] : ["pc", "android"];
     }
 
+    // ===== ブロックの累計時間 =====
+    // 「予定どおりの時間」を PC とスマホで共通の1つの時間として数える（同じ時間に両方止めていても1回だけ）。
+    // 記録: blockHistory（手動ブロック。d=端末, s=開始, e=終了予定または止めた時刻, 0=手動で止めるまで）
+    //       scheduleSnapshots（スケジュールを変えた時刻 t と、その時点の有効なスケジュール）
+    // 除外: statsExclusions（睡眠や仕事など、数えない時間帯。曜日つき・日またぎ可）
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const HISTORY_KEEP_MS = 70 * DAY_MS;
+
+    function statsRulesOf(st) {
+      return (st?.schedules || [])
+        .filter(r => r && r.enabled && parseHHMM(r.startTime) !== null && parseHHMM(r.endTime) !== null)
+        .map(r => ({ days: (r.days || []).filter(d => d >= 0 && d <= 6).slice().sort(), start: r.startTime, end: r.endTime }))
+        .sort((a, b) => JSON.stringify(a) < JSON.stringify(b) ? -1 : 1);
+    }
+
+    // 保存の直前に呼ぶ: cur → next の変化を履歴に書く（何度呼んでも同じ結果になる）
+    function recordHistory(cur, next, now = Date.now()) {
+      // 履歴は前の状態と合わせる（古い版が履歴なしで保存してきても消えないように）
+      next.blockHistory = (next.blockHistory || []).map(h => ({ ...h }));
+      for (const h of (cur?.blockHistory || [])) {
+        if (!next.blockHistory.some(x => x.d === h.d && x.s === h.s)) next.blockHistory.push({ ...h });
+      }
+      next.scheduleSnapshots = ((next.scheduleSnapshots || []).length ? next.scheduleSnapshots : (cur?.scheduleSnapshots || [])).map(x => ({ ...x }));
+      if (!next.statsExclusions && cur?.statsExclusions) next.statsExclusions = cur.statsExclusions;
+      const hist = next.blockHistory;
+      for (const dev of ["pc", "android"]) {
+        const a = cur?.manualSessions?.[dev];
+        const b = next?.manualSessions?.[dev];
+        const aLive = isLiveSession(a, now), bLive = isLiveSession(b, now);
+        const startOf = s => (s.startedAt > 0 ? s.startedAt : now);
+        if (aLive && !(bLive && startOf(b) === startOf(a) && (b.expiresAt || 0) === (a.expiresAt || 0))) {
+          const rec = hist.find(h => h.d === dev && h.s === startOf(a));
+          if (rec && (rec.e === 0 || rec.e > now)) {
+            rec.e = (bLive && startOf(b) === startOf(a)) ? (b.expiresAt || 0) : now;
+          }
+        }
+        if (bLive) {
+          const s = startOf(b);
+          const rec = hist.find(h => h.d === dev && h.s === s);
+          if (!rec) hist.push({ d: dev, s, e: b.expiresAt || 0 });
+          else if (!(aLive && startOf(a) === s && (a.expiresAt || 0) === (b.expiresAt || 0))) rec.e = b.expiresAt || 0;
+        }
+      }
+      const prevRules = statsRulesOf(cur), nextRules = statsRulesOf(next);
+      const snaps = next.scheduleSnapshots;
+      if (JSON.stringify(prevRules) !== JSON.stringify(nextRules)) {
+        // 記録を始める前のスケジュールは、今月の月初から続いていたものとして扱う
+        if (snaps.length === 0) snaps.push({ t: monthRange(0, now)[0], rules: prevRules });
+        if (JSON.stringify(snaps[snaps.length - 1].rules) !== JSON.stringify(nextRules)) snaps.push({ t: now, rules: nextRules });
+      }
+      // 古い記録を捨てる（先月の分が計算できるよう約70日は残す）
+      const cutoff = now - HISTORY_KEEP_MS;
+      next.blockHistory = hist.filter(h => h.e === 0 || h.e > cutoff);
+      while (snaps.length > 1 && snaps[1].t <= cutoff) snaps.shift();
+      return next;
+    }
+
+    // ルール（曜日・始まり・終わり）が当たる時間帯を [from, to) の範囲で並べる
+    function occurrences(rules, from, to) {
+      const out = [];
+      if (to <= from) return out;
+      const d = new Date(from); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - 1);
+      for (; d.getTime() < to; d.setDate(d.getDate() + 1)) {
+        const day = d.getTime(), dow = d.getDay();
+        const next = new Date(d); next.setDate(next.getDate() + 1);
+        for (const r of rules) {
+          if (!Array.isArray(r.days) || !r.days.includes(dow)) continue;
+          const s = parseHHMM(r.start ?? r.startTime), e = parseHHMM(r.end ?? r.endTime);
+          if (s === null || e === null) continue;
+          let a, b;
+          if (s === e) { a = day; b = next.getTime(); }
+          else if (s < e) { a = day + s * 60000; b = day + e * 60000; }
+          else { a = day + s * 60000; b = next.getTime() + e * 60000; }
+          a = Math.max(a, from); b = Math.min(b, to);
+          if (b > a) out.push([a, b]);
+        }
+      }
+      return out;
+    }
+
+    function mergeIntervals(iv) {
+      const s = iv.slice().sort((x, y) => x[0] - y[0]);
+      const out = [];
+      for (const [a, b] of s) {
+        if (out.length && a <= out[out.length - 1][1]) out[out.length - 1][1] = Math.max(out[out.length - 1][1], b);
+        else out.push([a, b]);
+      }
+      return out;
+    }
+
+    // [from, to) のブロック時間（ミリ秒）。数えない時間帯は差し引く
+    function blockedMs(st, from, to, now = Date.now()) {
+      const end = Math.min(to, now);
+      if (end <= from) return 0;
+      const iv = [];
+      for (const h of (st?.blockHistory || [])) {
+        const a = Math.max(h.s, from), b = h.e === 0 ? end : Math.min(h.e, end);
+        if (b > a) iv.push([a, b]);
+      }
+      // 古い版が書いた「1枠」の手動ブロックや、記録前から続いている手動ブロックも数える
+      for (const dev of ["pc", "android"]) {
+        const ms = st?.manualSessions?.[dev];
+        if (isLiveSession(ms, now) && !(st?.blockHistory || []).some(h => h.d === dev && h.s === ms.startedAt)) {
+          const a = Math.max(ms.startedAt || now, from), b = ms.expiresAt ? Math.min(ms.expiresAt, end) : end;
+          if (b > a) iv.push([a, b]);
+        }
+      }
+      // 記録がまだないときは、今のスケジュールが今月の月初から続いていたものとして扱う（先月以前にはさかのぼらない）
+      const snaps = (st?.scheduleSnapshots || []).length ? st.scheduleSnapshots : [{ t: monthRange(0, now)[0], rules: statsRulesOf(st) }];
+      for (let i = 0; i < snaps.length; i++) {
+        const a = Math.max(snaps[i].t, from), b = Math.min(i + 1 < snaps.length ? snaps[i + 1].t : end, end);
+        iv.push(...occurrences(snaps[i].rules || [], a, b));
+      }
+      const blocked = mergeIntervals(iv);
+      const ex = mergeIntervals(occurrences(st?.statsExclusions || [], from, end));
+      let total = 0;
+      for (const [a, b] of blocked) {
+        total += b - a;
+        for (const [x, y] of ex) {
+          const o = Math.min(b, y) - Math.max(a, x);
+          if (o > 0) total -= o;
+        }
+      }
+      return total;
+    }
+
+    function monthRange(offset, now = Date.now()) {
+      const d = new Date(now);
+      const a = new Date(d.getFullYear(), d.getMonth() + offset, 1).getTime();
+      const b = new Date(d.getFullYear(), d.getMonth() + offset + 1, 1).getTime();
+      return [a, b];
+    }
+
+    function formatDuration(ms) {
+      const min = Math.floor(ms / 60000);
+      const h = Math.floor(min / 60), m = min % 60;
+      return h > 0 ? `${h}時間${m}分` : `${m}分`;
+    }
+
     function removedAnyTarget(cur, next, dev) {
       const curList = (dev === "pc" ? cur?.browsers?.windows : cur?.browsers?.android) || [];
       const nextSet = new Set(((dev === "pc" ? next?.browsers?.windows : next?.browsers?.android) || []).map(x => String(x).trim().toLowerCase()));
@@ -952,6 +1143,7 @@
         showAlert(blockErr, "err");
         return false;
       }
+      recordHistory(currentState, nextState);
       nextState.updatedAt = Date.now();
       const mode = getActiveMode();
 
@@ -1107,6 +1299,7 @@
         document.getElementById("legendNow").style.background = LV_COLOR[selectedLevel];
       }
       renderDial(currentState, top);
+      renderStats();
 
       const btnStop = document.getElementById("btnStop");
       const pcStoppable = isLiveSession(currentState.manualSessions?.pc) && !(pc.active && pc.level >= 3);
@@ -1195,6 +1388,79 @@
           next.manualSessions[dev] = { active: true, level: 3, target: dev, startedAt: now, expiresAt: Math.max(now, ev.endsAt) + mins * 60 * 1000 };
         }
       }
+      await pushState(next);
+    }
+
+    let exSelectedDays = [0, 1, 2, 3, 4, 5, 6];
+    let lastStatsKey = "";
+
+    function describeDays(days) {
+      const d = (days || []).slice().sort();
+      if (d.length === 7) return "毎日";
+      if (d.join() === "1,2,3,4,5") return "平日";
+      if (d.join() === "0,6") return "土日";
+      return d.map(x => DAY_LABELS[x]).join("・");
+    }
+
+    function renderStats() {
+      const now = Date.now();
+      document.getElementById("statsMonth").textContent = formatDuration(blockedMs(currentState, ...monthRange(0, now), now));
+      document.getElementById("statsLast").textContent = formatDuration(blockedMs(currentState, ...monthRange(-1, now), now));
+      const ex = currentState.statsExclusions || [];
+      document.getElementById("statsNote").textContent = ex.length
+        ? "数えていない時間: " + ex.map(x => `${x.name || "無題"}（${describeDays(x.days)} ${x.start}〜${x.end}）`).join("、")
+        : "PC とスマホのどちらかをブロックしていた時間（重なりは1回）";
+      const key = JSON.stringify(ex);
+      if (key !== lastStatsKey) { lastStatsKey = key; renderExclusions(); }
+    }
+
+    function renderExclusions() {
+      const list = document.getElementById("exList");
+      const ex = currentState.statsExclusions || [];
+      list.innerHTML = ex.length ? "" : '<p class="sub" style="margin:0 0 8px">まだありません。</p>';
+      ex.forEach(x => {
+        const row = document.createElement("div");
+        row.className = "ex-item";
+        row.innerHTML = `<div><div style="font-weight:700">${escapeHtml(x.name || "無題")}</div><div class="sub">${describeDays(x.days)} ${escapeHtml(x.start)}〜${escapeHtml(x.end)}</div></div>
+          <button class="del" aria-label="${escapeHtml(x.name || "時間帯")}を削除"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"></path></svg></button>`;
+        row.querySelector("button").onclick = () => deleteExclusion(x.id);
+        list.appendChild(row);
+      });
+    }
+
+    function renderExDayPicker() {
+      const el = document.getElementById("exDayPicker");
+      el.innerHTML = "";
+      DAY_LABELS.forEach((lbl, idx) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "day-chip" + (exSelectedDays.includes(idx) ? " on" : "");
+        btn.textContent = lbl;
+        btn.setAttribute("aria-pressed", exSelectedDays.includes(idx) ? "true" : "false");
+        btn.onclick = () => {
+          exSelectedDays = exSelectedDays.includes(idx) ? exSelectedDays.filter(d => d !== idx) : [...exSelectedDays, idx];
+          renderExDayPicker();
+        };
+        el.appendChild(btn);
+      });
+    }
+
+    async function addExclusion() {
+      const start = document.getElementById("exStart").value, end = document.getElementById("exEnd").value;
+      if (parseHHMM(start) === null || parseHHMM(end) === null) { showAlert("始まりと終わりの時刻を入れてください。", "err"); return; }
+      if (exSelectedDays.length === 0) { showAlert("曜日を1つ以上選んでください。", "err"); return; }
+      const next = normalizeState(JSON.parse(JSON.stringify(currentState)));
+      next.statsExclusions = (next.statsExclusions || []).concat([{
+        id: "ex-" + Math.random().toString(36).slice(2, 10),
+        name: document.getElementById("exName").value.trim() || "数えない時間",
+        days: exSelectedDays.slice().sort(), start, end
+      }]);
+      await pushState(next);
+    }
+
+    async function deleteExclusion(id) {
+      const next = normalizeState(JSON.parse(JSON.stringify(currentState)));
+      next.statsExclusions = (next.statsExclusions || []).filter(x => x.id !== id);
       await pushState(next);
     }
 
@@ -1361,6 +1627,7 @@
       document.getElementById("cfgKey").value = cfg.key || "";
       document.getElementById("cfgSync").value = cfg.sync || "";
       renderDayPicker();
+      renderExDayPicker();
       document.querySelectorAll("#durChips .chip").forEach(c => {
         c.onclick = () => { selectedDuration = Number(c.dataset.v); renderStartControls(); };
       });

@@ -65,6 +65,14 @@ namespace FocusGuard
 
         private bool _forceExit;
 
+        // 累計
+        private Label _lblStatsMonth, _lblStatsLast, _lblStatsNote;
+        private RoundPanel _exCard;
+        private Panel _exList;
+        private TextBox _txtExName, _txtExStart, _txtExEnd;
+        private PillButton[] _exDayChips;
+        private string _exSignature;
+
         // ホワイトリスト
         private TextBox _txtSites;
 
@@ -308,15 +316,19 @@ namespace FocusGuard
             anCard.Controls.AddRange(new Control[] { _lblAndroidState, _lblAndroidSub });
             Controls.Add(anCard);
 
-            Controls.Add(new Label
-            {
-                Text = "× で閉じてもタスクトレイで動き続けます。\r\nLv.3 の間は、強制終了されても自動で立ち上がります。",
-                Font = Theme.UI(8.5f),
-                ForeColor = Theme.Sub,
-                BackColor = Theme.Ground,
-                Location = new Point(24, 622),
-                Size = new Size(320, 44)
-            });
+            // 今月のブロック時間（PC とスマホで共通の1つの時間）
+            var statsCard = new RoundPanel { Fill = Theme.Paper, BackColor = Theme.Ground, Location = new Point(24, 616), Size = new Size(320, 72), Radius = 14f };
+            statsCard.Controls.Add(MakeLabel("今月のブロック時間", Theme.UI(8.5f), Theme.Sub, 14, 8, 180, 18));
+            _lblStatsMonth = MakeLabel("0分", Theme.Serif(15f), Theme.Ink, 12, 26, 200, 30);
+            var lblLastTitle = MakeLabel("先月", Theme.UI(8.5f), Theme.Sub, 206, 8, 104, 18);
+            lblLastTitle.TextAlign = ContentAlignment.MiddleRight;
+            statsCard.Controls.Add(lblLastTitle);
+            _lblStatsLast = MakeLabel("0分", Theme.UI(10f, true), Theme.Ink, 206, 30, 104, 22);
+            _lblStatsLast.TextAlign = ContentAlignment.MiddleRight;
+            _lblStatsNote = MakeLabel("", Theme.UI(7.5f), Theme.Sub, 14, 54, 296, 16);
+            _lblStatsNote.AutoEllipsis = true;
+            statsCard.Controls.AddRange(new Control[] { _lblStatsMonth, _lblStatsLast, _lblStatsNote });
+            Controls.Add(statsCard);
 
             // ---- 右列: 切り替え ----
             var nav = new RoundPanel { Fill = Theme.Well, BackColor = Theme.Ground, Location = new Point(RightX, 20), Size = new Size(PageW, 52), Radius = 12f };
@@ -546,6 +558,31 @@ namespace FocusGuard
                 _btnTestSupabase, _btnCopyMobileLink, _btnOpenWebUi
             });
             page.Controls.Add(conn);
+
+            _exCard = MakeCard(320);
+            _exCard.Controls.Add(MakeLabel("累計に数えない時間帯", Theme.Serif(12f), Theme.Ink, 18, 14, 404, 28));
+            _exCard.Controls.Add(MakeLabel("睡眠や仕事など、ブロックしていても「今月のブロック時間」に数えたくない時間帯です。ブロックそのものには影響しません。",
+                Theme.UI(8.5f), Theme.Sub, 18, 46, 404, 40));
+            _exList = new Panel { Location = new Point(18, 90), Size = new Size(404, 0), BackColor = Theme.Paper };
+            _exCard.Controls.Add(_exList);
+            _txtExName = MakeTextBox(18, 0, 404); _txtExName.Text = "睡眠";
+            _txtExStart = MakeTextBox(18, 0, 196); _txtExStart.Text = "23:00";
+            _txtExEnd = MakeTextBox(226, 0, 196); _txtExEnd.Text = "07:00";
+            _exDayChips = new PillButton[7];
+            string[] exDayLabels = { "日", "月", "火", "水", "木", "金", "土" };
+            for (int i = 0; i < 7; i++)
+            {
+                var chip = new PillButton(exDayLabels[i], PillKind.Chip) { Size = new Size(44, 44), BackColor = Theme.Paper, Selected = true };
+                chip.Click += (s, e) => { chip.Selected = !chip.Selected; };
+                _exDayChips[i] = chip;
+            }
+            var btnAddEx = new PillButton("この時間帯を数えない", PillKind.Primary) { Size = new Size(404, 48), BackColor = Theme.Paper, Name = "btnAddEx" };
+            btnAddEx.Click += OnAddExclusion;
+            _exCard.Controls.Add(_txtExName); _exCard.Controls.Add(_txtExStart); _exCard.Controls.Add(_txtExEnd);
+            foreach (var c in _exDayChips) _exCard.Controls.Add(c);
+            _exCard.Controls.Add(btnAddEx);
+            page.Controls.Add(_exCard);
+            LayoutExclusions(new List<StatsRule>());
 
             var sites = MakeCard(300);
             sites.Controls.Add(MakeLabel("ブロック中でも開けるサイト", Theme.Serif(12f), Theme.Ink, 18, 14, 404, 28));
@@ -777,6 +814,7 @@ namespace FocusGuard
             }
             _legendNow.ForeColor = Theme.Lv(top.IsActive ? top.Level : _selLevel);
             _legendSched.ForeColor = Theme.Sched;
+            UpdateStats(st);
             _dial.NowMin = nowMin;
             _dial.ShowLock = top.IsActive && top.Level >= 3;
             _dial.AccessibleName = _dial.CenterLabel + " " + _dial.CenterTime + " " + _dial.CenterState;
@@ -856,6 +894,9 @@ namespace FocusGuard
             }
 
             _txtBrowsers.Text = string.Join(", ", st.browsers.windows);
+            var exList = st.statsExclusions ?? new List<StatsRule>();
+            string exSig = string.Join("|", exList.Select(x => x.id + x.name + x.start + x.end + string.Join("", (x.days ?? new List<int>()).Select(d => d.ToString()).ToArray())).ToArray());
+            if (exSig != _exSignature) { _exSignature = exSig; LayoutExclusions(exList); }
             if (!_txtSites.Focused)
                 _txtSites.Text = string.Join("\r\n", (st.allowedSites ?? new List<string>()).ToArray());
             _numLv1Wait.Value = Math.Max(_numLv1Wait.Minimum, Math.Min(_numLv1Wait.Maximum, st.lv1WaitSeconds));
@@ -1025,6 +1066,97 @@ namespace FocusGuard
             }
             MessageBox.Show(err, "変更できません", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return false;
+        }
+
+        private void UpdateStats(GuardState st)
+        {
+            long now = TimeUtil.NowMs();
+            _lblStatsMonth.Text = BlockStats.FormatDuration(BlockStats.MonthMs(st, 0, now));
+            _lblStatsLast.Text = BlockStats.FormatDuration(BlockStats.MonthMs(st, -1, now));
+            var ex = st.statsExclusions ?? new List<StatsRule>();
+            _lblStatsNote.Text = ex.Count > 0
+                ? "数えていない時間: " + string.Join("、", ex.Select(x => x.name ?? "無題").ToArray())
+                : "PC とスマホのどちらかを止めていた時間（重なりは1回）";
+        }
+
+        /// <summary>数えない時間帯の一覧と追加欄を並べ直す（件数でカードの高さが変わる）</summary>
+        private void LayoutExclusions(List<StatsRule> ex)
+        {
+            foreach (Control c in _exList.Controls) c.Dispose();
+            _exList.Controls.Clear();
+            int y = 0;
+            if (ex.Count == 0)
+            {
+                _exList.Controls.Add(MakeLabel("まだありません。", Theme.UI(9f), Theme.Sub, 0, 0, 404, 22));
+                y = 28;
+            }
+            foreach (var x in ex)
+            {
+                var id = x.id;
+                var name = x.name ?? "無題";
+                _exList.Controls.Add(MakeLabel(name, Theme.UI(10f, true), Theme.Ink, 0, y, 330, 20));
+                _exList.Controls.Add(MakeLabel(string.Format("{0} {1}〜{2}", BlockStats.DescribeDays(x.days), x.start, x.end), Theme.UI(8.5f), Theme.Sub, 0, y + 20, 330, 18));
+                var del = new PillButton("削除", PillKind.Line) { Location = new Point(346, y + 2), Size = new Size(56, 36), BackColor = Theme.Paper, Font = Theme.UI(9f) };
+                del.AccessibleName = name + "を削除";
+                del.Click += (s, e) => OnDeleteExclusion(id);
+                _exList.Controls.Add(del);
+                y += 46;
+            }
+            _exList.Height = y;
+            int top = 90 + y + 6;
+            var lblTop = top;
+            _txtExName.Location = new Point(18, lblTop + 18);
+            _txtExStart.Location = new Point(18, lblTop + 74);
+            _txtExEnd.Location = new Point(226, lblTop + 74);
+            for (int i = 0; i < 7; i++) _exDayChips[i].Location = new Point(18 + i * 52, lblTop + 124);
+            var btn = _exCard.Controls.Find("btnAddEx", false)[0];
+            btn.Location = new Point(18, lblTop + 180);
+            foreach (var old in _exCard.Controls.OfType<Label>().Where(l => (string)l.Tag == "exField").ToList()) { _exCard.Controls.Remove(old); old.Dispose(); }
+            var f1 = MakeLabel("名前", Theme.UI(8.5f), Theme.Sub, 18, lblTop, 200, 18); f1.Tag = "exField";
+            var f2 = MakeLabel("始まり（例 23:00）", Theme.UI(8.5f), Theme.Sub, 18, lblTop + 56, 196, 18); f2.Tag = "exField";
+            var f3 = MakeLabel("終わり（翌日でもOK）", Theme.UI(8.5f), Theme.Sub, 226, lblTop + 56, 196, 18); f3.Tag = "exField";
+            var f4 = MakeLabel("曜日", Theme.UI(8.5f), Theme.Sub, 18, lblTop + 106, 196, 18); f4.Tag = "exField";
+            _exCard.Controls.AddRange(new Control[] { f1, f2, f3, f4 });
+            _exCard.Height = lblTop + 180 + 48 + 18;
+        }
+
+        private void OnAddExclusion(object sender, EventArgs e)
+        {
+            var days = new List<int>();
+            for (int i = 0; i < 7; i++) if (_exDayChips[i].Selected) days.Add(i);
+            if (days.Count == 0)
+            {
+                MessageBox.Show("曜日を1つ以上選んでください。", "数えない時間帯", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            if (BlockStats.ParseMin(_txtExStart.Text) == null || BlockStats.ParseMin(_txtExEnd.Text) == null)
+            {
+                MessageBox.Show("時刻は 23:00 のように「時:分」で入力してください。", "数えない時間帯", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            var st = _sync.GetState();
+            if (st.statsExclusions == null) st.statsExclusions = new List<StatsRule>();
+            st.statsExclusions.Add(new StatsRule
+            {
+                id = "ex-" + Guid.NewGuid().ToString("N").Substring(0, 8),
+                name = string.IsNullOrWhiteSpace(_txtExName.Text) ? "数えない時間" : _txtExName.Text.Trim(),
+                days = days,
+                start = _txtExStart.Text.Trim(),
+                end = _txtExEnd.Text.Trim()
+            });
+            string err;
+            if (!_sync.UpdateState(st, out err, false))
+                MessageBox.Show(err, "追加できません", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+
+        private void OnDeleteExclusion(string id)
+        {
+            var st = _sync.GetState();
+            if (st.statsExclusions == null) return;
+            st.statsExclusions.RemoveAll(x => x.id == id);
+            string err;
+            if (!_sync.UpdateState(st, out err, false))
+                MessageBox.Show(err, "削除できません", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
 
         private void OnSaveAllowedSites(object sender, EventArgs e)

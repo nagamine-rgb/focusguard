@@ -172,6 +172,9 @@ namespace FocusGuard
                     return false;
                 }
 
+                // 累計のための記録（手動ブロックとスケジュールの変化）
+                BlockStats.RecordHistory(_state, nextState, TimeUtil.NowMs());
+
                 // 期限切れの手動ブロックを止める
                 nextState.ExpireManual(TimeUtil.NowMs());
 
