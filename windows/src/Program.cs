@@ -293,37 +293,39 @@ namespace FocusGuard
             ExitThread();
         }
 
-        /// <summary>アプリのアイコンと同じ文字盤。弧の色で状態を表す</summary>
+        /// <summary>アプリのアイコンと同じ文字盤。扇形の色で状態を表す</summary>
         private Icon CreateStatusIcon(int level)
         {
-            Color arc = Color.FromArgb(143, 160, 139);                          // ブロックなし
-            if (level == 1) arc = Color.FromArgb(217, 162, 27);                 // Lv.1
-            else if (level == 2) arc = Color.FromArgb(224, 122, 69);            // Lv.2
-            else if (level >= 3 && level < 10) arc = Color.FromArgb(220, 74, 66); // Lv.3
-            else if (level == 10) arc = Color.FromArgb(228, 232, 225);          // 一時的に開けている
+            Color sector = Color.FromArgb(160, 172, 156);                         // ブロックなし
+            if (level == 1) sector = Color.FromArgb(217, 162, 27);                // Lv.1
+            else if (level == 2) sector = Color.FromArgb(224, 122, 69);           // Lv.2
+            else if (level >= 3 && level < 10) sector = Color.FromArgb(200, 57, 43); // Lv.3
+            else if (level == 10) sector = Color.FromArgb(255, 255, 255);         // 一時的に開けている
 
+            var ink = Color.FromArgb(28, 38, 32);
             using (var bmp = new Bitmap(32, 32))
             using (var g = Graphics.FromImage(bmp))
             {
                 g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
                 g.Clear(Color.Transparent);
                 using (var path = Theme.Rounded(new RectangleF(0, 0, 32, 32), 7f))
-                using (var bg = new SolidBrush(Color.FromArgb(28, 38, 32)))
+                using (var bg = new SolidBrush(Color.FromArgb(228, 232, 225)))
                     g.FillPath(bg, path);
 
-                var ring = new RectangleF(16 - 8.3f, 16 - 8.3f, 16.6f, 16.6f);
-                using (var track = new Pen(Color.FromArgb(58, 71, 64), 4.8f))
-                    g.DrawEllipse(track, ring);
-                using (var pen = new Pen(arc, 4.8f))
+                // 4本の目盛り
+                using (var tick = new Pen(ink, 2.4f) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round })
                 {
-                    pen.StartCap = System.Drawing.Drawing2D.LineCap.Round;
-                    g.DrawArc(pen, ring, -90, 120);
+                    g.DrawLine(tick, 16, 2.5f, 16, 4.8f);
+                    g.DrawLine(tick, 29.5f, 16, 27.2f, 16);
+                    g.DrawLine(tick, 16, 29.5f, 16, 27.2f);
+                    g.DrawLine(tick, 2.5f, 16, 4.8f, 16);
                 }
-                float dx = 16 + 8.3f * 0.866f, dy = 16 + 8.3f * 0.5f;
-                using (var ink = new SolidBrush(Color.FromArgb(28, 38, 32)))
-                    g.FillEllipse(ink, dx - 3.8f, dy - 3.8f, 7.6f, 7.6f);
-                using (var fog = new SolidBrush(Color.FromArgb(228, 232, 225)))
-                    g.FillEllipse(fog, dx - 2.8f, dy - 2.8f, 5.6f, 5.6f);
+                var ring = new RectangleF(16 - 9.5f, 16 - 9.5f, 19f, 19f);
+                using (var br = new SolidBrush(sector)) g.FillPie(br, ring.X, ring.Y, ring.Width, ring.Height, -90, 120);
+                using (var pen = new Pen(ink, 2f)) g.DrawEllipse(pen, ring);
+                using (var hand = new Pen(ink, 2.4f) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round })
+                    g.DrawLine(hand, 16, 16, 16 + 7.5f * 0.866f, 16 + 7.5f * 0.5f);
+                using (var dot = new SolidBrush(ink)) g.FillEllipse(dot, 14, 14, 4, 4);
                 return Icon.FromHandle(bmp.GetHicon());
             }
         }
