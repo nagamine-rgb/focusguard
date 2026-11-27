@@ -31,7 +31,6 @@ class BlockActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        isShowing = true
         repo = SyncRepository.getInstance(this)
 
         // Pressing Back goes to Home instead of returning to the blocked browser
@@ -307,6 +306,17 @@ class BlockActivity : AppCompatActivity() {
         }
         startActivity(homeIntent)
         finish()
+    }
+
+    // 画面に出ている間だけ true。ホームボタンなどで裏に回ったまま残っても、次のブロックを止めないようにする
+    override fun onStart() {
+        super.onStart()
+        isShowing = true
+    }
+
+    override fun onStop() {
+        isShowing = false
+        super.onStop()
     }
 
     override fun onDestroy() {

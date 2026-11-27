@@ -29,10 +29,14 @@ class BrowserBlockerService : AccessibilityService() {
     /** アドレスバーの入力中として止めずにおく最長時間（ずっと入力欄に触れたままの抜け道を防ぐ） */
     private val editingSinceByPkg = mutableMapOf<String, Long>()
     private val unreadableStreakByPkg = mutableMapOf<String, Int>()
+    /** 止める対象のアプリ（小文字）。イベントのたびに状態を読み直さないよう、ここに覚えておく */
+    @Volatile
+    private var targetPkgs: Set<String> = emptySet()
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         repo = SyncRepository.getInstance(this)
+        refreshTargets()
         isRunning = true
         instance = this
 
@@ -42,13 +46,18 @@ class BrowserBlockerService : AccessibilityService() {
                 try {
                     pollTick++
                     repo.pullFromSupabase(false)
+                    refreshTargets()
                     if (pollTick % 4 == 0) {
                         repo.sendHeartbeat()
                     }
-                    // Also enforce if user already has a browser open when PC triggers a block!
-                    val fg = currentForegroundPkg
-                    if (fg.isNotEmpty()) {
-                        mainHandler.post { enforceForPackage(fg, fromPoll = true) }
+                    // ブロック開始時にすでに開いているアプリも止める。
+                    // 通知やキーボードのイベントで「いま前にあるアプリ」がずれることがあるので、実際の画面から確かめる
+                    mainHandler.post {
+                        val fg = activePackage() ?: currentForegroundPkg
+                        if (fg.isNotEmpty()) {
+                            currentForegroundPkg = fg
+                            enforceForPackage(fg, fromPoll = true)
+                        }
                     }
                 } catch (_: Exception) {
                 }
@@ -61,12 +70,15 @@ class BrowserBlockerService : AccessibilityService() {
         val pkg = event.packageName?.toString()?.trim() ?: return
         if (pkg.isEmpty()) return
 
-        // ホワイトリスト運用中は、ブラウザ内でページが変わったときも確認する
+        // 止める対象のアプリの画面が動いたときも確認する
+        // （ブラウザのページ移動、ブロック前から開いていたアプリ、ホーム以外から戻ってきたアプリなど）
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {
-            if (pkg != currentForegroundPkg || !SiteAllowlist.urlBarIds.containsKey(pkg)) return
+            if (pkg == packageName || pkg.lowercase() !in targetPkgs) return
             val now = System.currentTimeMillis()
             if (now - lastContentCheckAtMs < 700L) return
             lastContentCheckAtMs = now
+            if (activePackage() != pkg) return
+            currentForegroundPkg = pkg
             enforceForPackage(pkg, fromPoll = true)
             return
         }
@@ -86,6 +98,7 @@ class BrowserBlockerService : AccessibilityService() {
         if (pkg == packageName) return
 
         val state = repo.getState()
+        targetPkgs = state.browsers.android.map { it.trim().lowercase() }.toSet()
         val isTargetBrowser = state.browsers.android.any { it.equals(pkg, ignoreCase = true) }
         if (!isTargetBrowser) return
 
@@ -200,6 +213,18 @@ class BrowserBlockerService : AccessibilityService() {
         } catch (_: Exception) {
             performGlobalAction(GLOBAL_ACTION_HOME)
         }
+    }
+
+    private fun refreshTargets() {
+        if (!::repo.isInitialized) return
+        targetPkgs = repo.getState().browsers.android.map { it.trim().lowercase() }.toSet()
+    }
+
+    /** いま操作できる画面（アクティブなウィンドウ）のアプリ */
+    private fun activePackage(): String? = try {
+        rootInActiveWindow?.packageName?.toString()?.takeIf { it.isNotBlank() }
+    } catch (_: Exception) {
+        null
     }
 
     private data class UrlRead(val found: Boolean, val host: String?, val editing: Boolean)
